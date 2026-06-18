@@ -10,6 +10,7 @@ import { dbEnabled } from "../../test-helpers/db.js";
 // These run without a real DB by injecting a fake repo via constructor.
 
 describe("ContactsService.importFromFile (unit, mocked repo)", () => {
+  // ExcelJS streaming can be slow; allow 15 s for this test
   it("returns correct summary and calls recordImport with counts", async () => {
     // Create fixture xlsx:
     //   3 valid rows, 1 invalid email, 1 within-file duplicate
@@ -69,7 +70,33 @@ describe("ContactsService.importFromFile (unit, mocked repo)", () => {
     expect(importProgress.get(jobId)?.done).toBe(true);
     expect(importProgress.get(jobId)?.summary?.imported).toBe(3);
 
-    await fs.unlink(tmpFile);
+    // FIX A: temp file must have been deleted by importFromFile
+    await expect(fs.access(tmpFile)).rejects.toThrow();
+  }, 15_000);
+
+  it("deletes the temp file even when import fails", async () => {
+    const tmpFile = path.join(os.tmpdir(), `${crypto.randomUUID()}.xlsx`);
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Sheet1");
+    ws.addRow(["companyName", "location", "email"]);
+    ws.addRow(["Acme", "NY", "err@acme.com"]);
+    await wb.xlsx.writeFile(tmpFile);
+
+    const { ContactsService } = await import("./contacts.service.js");
+    const { ContactsRepo } = await import("./contacts.repo.js");
+
+    const fakeRepo = {
+      bulkInsert: vi.fn().mockRejectedValue(new Error("DB down")),
+      recordImport: vi.fn(),
+    } as unknown as InstanceType<typeof ContactsRepo>;
+
+    const service = new ContactsService(fakeRepo);
+    const jobId = crypto.randomUUID();
+
+    await expect(service.importFromFile(tmpFile, "err.xlsx", jobId)).rejects.toThrow("DB down");
+
+    // FIX A: file must be cleaned up even on failure
+    await expect(fs.access(tmpFile)).rejects.toThrow();
   });
 });
 

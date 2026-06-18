@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { logger } from "../../utils/logger.js";
 
 export type ContactRow = {
   companyName: string;
@@ -36,6 +37,17 @@ export async function parseContactsXlsx(
           else if (key === "email") headerIndexes["email"] = idx;
         });
         headerParsed = true;
+
+        // Warn if any expected column is absent
+        const expectedColumns = ["companyName", "location", "email"] as const;
+        const missingColumns = expectedColumns.filter((col) => !(col in headerIndexes));
+        if (missingColumns.length > 0) {
+          logger.warn(
+            { missingColumns },
+            `parseContactsXlsx: header missing expected column(s): ${missingColumns.join(", ")}`,
+          );
+        }
+
         continue;
       }
 

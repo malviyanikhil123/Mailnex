@@ -3,6 +3,9 @@ import { contacts } from "../../db/schema/contacts.js";
 import { contactsImports } from "../../db/schema/imports.js";
 import { ilike, eq, or, and, count } from "drizzle-orm";
 import type { ListContactsQuery } from "./contacts.schema.js";
+import type { contactStatus } from "../../db/schema/enums.js";
+
+type ContactStatusValue = typeof contactStatus.enumValues[number];
 
 export type ContactInsertRow = {
   companyName: string;
@@ -65,7 +68,7 @@ export class ContactsRepo {
       );
     }
     if (status) {
-      conditions.push(eq(contacts.status, status));
+      conditions.push(eq(contacts.status, status as ContactStatusValue));
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
