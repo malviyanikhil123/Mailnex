@@ -6,6 +6,7 @@ import jwt from "@fastify/jwt";
 import multipart from "@fastify/multipart";
 import { env } from "./config/env.js";
 import { registerErrorHandler } from "./middleware/error-handler.js";
+import { authRoutes } from "./modules/auth/auth.routes.js";
 
 export async function buildApp() {
   const app = Fastify({ logger: false });
@@ -16,6 +17,6 @@ export async function buildApp() {
   await app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 } });
   registerErrorHandler(app);
   app.get("/health", async () => ({ status: "ok" }));
-  // route modules registered here in later tasks
+  await app.register(authRoutes, { prefix: "/auth" });
   return app;
 }
