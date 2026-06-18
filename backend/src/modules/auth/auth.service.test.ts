@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterEach } from "vitest";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { AuthService } from "./auth.service.js";
@@ -149,6 +149,56 @@ describe("AuthService", () => {
       // We verify the hash is of the new token, not some stale value
       const decoded = jwt.verify(result.refreshToken, JWT_REFRESH_SECRET) as unknown as { sub: number };
       expect(decoded.sub).toBe(1);
+    });
+
+    it("rejects the original token after rotation (reuse attack)", async () => {
+      // Use fake timers so that jwt.sign produces a different iat on each call,
+      // guaranteeing the rotated token is a distinct JWT from the original.
+      vi.useFakeTimers();
+      const t0 = Date.now();
+      vi.setSystemTime(t0);
+
+      // Step 1: issue the original token at t0 and hash it as the "stored" value.
+      const originalToken = makeRefreshToken(1);
+      const originalHash = await bcrypt.hash(originalToken, 10);
+
+      // Mutable state to simulate the DB row being updated after rotation.
+      let storedRefreshToken: string | null = originalHash;
+
+      const repo = makeMockRepo({
+        findById: async () => ({ ...user, refreshToken: storedRefreshToken }),
+      });
+      // Override setRefreshToken so mutations to storedRefreshToken are visible to findById.
+      repo.setRefreshToken.mockImplementation(async (_id: number, hash: string | null) => {
+        storedRefreshToken = hash;
+      });
+      const svc = new AuthService(repo, stubSignAccess);
+
+      // Advance clock by 2 seconds so the rotated token gets a different iat.
+      vi.setSystemTime(t0 + 2000);
+
+      // Step 2: first refresh call succeeds and rotates the stored hash.
+      const result = await svc.refresh(originalToken);
+      expect(result).toMatchObject({
+        accessToken: expect.any(String),
+        refreshToken: expect.any(String),
+      });
+      // setRefreshToken must have been called once with a new hash.
+      expect(repo.setRefreshToken).toHaveBeenCalledOnce();
+      const [, newHash] = repo.setRefreshToken.mock.calls[0] as [number, string];
+      // The new hash must match the returned (rotated) refresh token, not the original.
+      expect(await bcrypt.compare(result.refreshToken, newHash)).toBe(true);
+      // The rotated token is distinct from the original (different iat).
+      expect(result.refreshToken).not.toBe(originalToken);
+      expect(await bcrypt.compare(originalToken, newHash)).toBe(false);
+
+      // Step 3: replaying the original token must now fail with 401,
+      // because storedRefreshToken is now newHash which doesn't match originalToken.
+      await expect(svc.refresh(originalToken)).rejects.toMatchObject({
+        statusCode: 401,
+      });
+
+      vi.useRealTimers();
     });
 
     it("throws 401 on an expired / tampered JWT", async () => {

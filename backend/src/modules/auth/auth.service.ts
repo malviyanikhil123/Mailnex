@@ -3,6 +3,9 @@ import jwt from "jsonwebtoken";
 import { env } from "../../config/env.js";
 import type { AuthRepo } from "./auth.repo.js";
 
+// Fixed dummy hash used to equalize timing when a user is not found.
+const DUMMY_HASH = bcrypt.hashSync("dummy-password-placeholder", 10);
+
 export class AuthService {
   constructor(
     private repo: AuthRepo,
@@ -11,7 +14,13 @@ export class AuthService {
 
   async login(email: string, password: string) {
     const u = await this.repo.findByEmail(email);
-    if (!u || !(await bcrypt.compare(password, u.passwordHash))) {
+    if (!u) {
+      await bcrypt.compare(password, DUMMY_HASH);
+      const e: any = new Error("Invalid credentials");
+      e.statusCode = 401;
+      throw e;
+    }
+    if (!(await bcrypt.compare(password, u.passwordHash))) {
       const e: any = new Error("Invalid credentials");
       e.statusCode = 401;
       throw e;
