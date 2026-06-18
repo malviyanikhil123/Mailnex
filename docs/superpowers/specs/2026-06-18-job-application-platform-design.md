@@ -257,6 +257,18 @@ Backend fully (DB → auth → import → templates → AI → provider → sche
 campaign → logs → analytics → settings), verified end-to-end, then frontend
 against the running API. Each phase from the implementation plan.
 
+## 13a. Deferred to v2 (forward-compatible)
+
+Multi-campaign support (`campaigns` + `campaign_contacts` tables) is **out of scope
+for v1** — v1 is single-campaign by design (one `campaign_settings` row, one
+`campaign_queue`). The seam is kept clean so v2 is additive, not a rewrite:
+`email_logs` and `campaign_queue` already carry `contactId`, `templateId`, and
+`mode`, so v2 can introduce a `campaigns` table, backfill one default campaign,
+and add a nullable `campaignId` FK (plus a `campaign_contacts` join table:
+`id, campaignId, contactId, status, sentAt, createdAt`) without altering existing
+behavior. This enables multiple campaigns, per-campaign templates, follow-ups, and
+per-campaign analytics later.
+
 ## 14. Environment Variables
 
 **Backend:** `DATABASE_URL, JWT_SECRET, JWT_REFRESH_SECRET, ENCRYPTION_KEY,
