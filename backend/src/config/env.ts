@@ -23,4 +23,8 @@ export const env: Env = new Proxy({} as Env, {
     if (!_env) _env = loadEnv();
     return (_env as Record<string | symbol, unknown>)[prop];
   },
+  has(_target, prop) {
+    if (!_env) _env = loadEnv();
+    return prop in (_env as object);
+  },
 });
