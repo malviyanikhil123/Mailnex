@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS "email_templates_name_category_unique" ON "email_templates" USING btree ("name","category");

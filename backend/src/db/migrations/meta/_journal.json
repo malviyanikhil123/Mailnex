@@ -8,6 +8,13 @@
       "when": 1781782687572,
       "tag": "0000_redundant_dark_phoenix",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781783764239,
+      "tag": "0001_heavy_rockslide",
+      "breakpoints": true
     }
   ]
 }

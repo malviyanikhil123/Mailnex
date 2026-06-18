@@ -2,10 +2,11 @@
  * Main seed orchestrator.
  * Run: npm run db:seed
  *
- * Idempotent — each insert uses onConflictDoNothing so re-running is safe.
+ * Idempotent — template inserts use onConflictDoNothing targeting the
+ * (name, category) unique index; other inserts rely on their own unique
+ * constraints. Re-running is safe once the DB schema is up to date.
  * Requires a live DATABASE_URL in environment (or .env file).
  */
-import postgres from "postgres";
 import { db } from "../index.js";
 import { emailTemplates, appSettings, campaignSettings } from "../schema/index.js";
 import { TEMPLATE_SEED } from "./templates.js";
@@ -14,7 +15,7 @@ import { seedAdmin } from "./admin.js";
 
 async function seedTemplates(): Promise<number> {
   const rows = TEMPLATE_SEED.map((t) => ({ ...t }));
-  await db.insert(emailTemplates).values(rows).onConflictDoNothing();
+  await db.insert(emailTemplates).values(rows).onConflictDoNothing({ target: [emailTemplates.name, emailTemplates.category] });
   return rows.length;
 }
 
