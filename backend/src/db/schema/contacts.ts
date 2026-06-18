@@ -1,5 +1,5 @@
 import { pgTable, serial, text, integer, timestamp } from "drizzle-orm/pg-core";
-import { contactStatus } from "./enums";
+import { contactStatus } from "./enums.js";
 export const contacts = pgTable("contacts", {
   id: serial("id").primaryKey(),
   companyName: text("company_name").notNull(),

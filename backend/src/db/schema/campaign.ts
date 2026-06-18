@@ -1,6 +1,6 @@
 import { pgTable, serial, integer, text, boolean, timestamp } from "drizzle-orm/pg-core";
-import { contacts } from "./contacts";
-import { campaignMode, campaignState, queueStatus } from "./enums";
+import { contacts } from "./contacts.js";
+import { campaignMode, campaignState, queueStatus } from "./enums.js";
 export const campaignSettings = pgTable("campaign_settings", {
   id: serial("id").primaryKey(),
   mode: campaignMode("mode").notNull().default("DRAFT"),

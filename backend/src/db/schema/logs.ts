@@ -1,7 +1,7 @@
 import { pgTable, serial, integer, text, boolean, timestamp } from "drizzle-orm/pg-core";
-import { contacts } from "./contacts";
-import { emailTemplates } from "./templates";
-import { logStatus, failureType, campaignMode } from "./enums";
+import { contacts } from "./contacts.js";
+import { emailTemplates } from "./templates.js";
+import { logStatus, failureType, campaignMode } from "./enums.js";
 export const emailLogs = pgTable("email_logs", {
   id: serial("id").primaryKey(),
   contactId: integer("contact_id").references(() => contacts.id),
