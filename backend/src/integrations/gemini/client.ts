@@ -18,6 +18,7 @@
  * In production it defaults to constructing the real GoogleGenerativeAI client.
  */
 
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
 import { interpolate } from "../../utils/interpolate.js";
 import { logger } from "../../utils/logger.js";
@@ -59,8 +60,8 @@ export type ModelFactory = (apiKey: string) => GenerativeModelLike;
 // ---------------------------------------------------------------------------
 
 const personalizationSchema = z.object({
-  subject: z.string().min(1),
-  body: z.string().min(1),
+  subject: z.string().trim().min(1),
+  body: z.string().trim().min(1),
 });
 
 // ---------------------------------------------------------------------------
@@ -68,12 +69,6 @@ const personalizationSchema = z.object({
 // ---------------------------------------------------------------------------
 
 function defaultModelFactory(apiKey: string): GenerativeModelLike {
-  // Lazy import to avoid module-level side effects and to keep tests clean
-  const { GoogleGenerativeAI } = require("@google/generative-ai") as {
-    GoogleGenerativeAI: new (apiKey: string) => {
-      getGenerativeModel(params: { model: string }): GenerativeModelLike;
-    };
-  };
   const client = new GoogleGenerativeAI(apiKey);
   return client.getGenerativeModel({ model: "gemini-1.5-flash" });
 }

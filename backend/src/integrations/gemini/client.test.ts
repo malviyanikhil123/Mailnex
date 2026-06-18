@@ -122,4 +122,41 @@ describe("personalize()", () => {
     expect(result.aiUsed).toBe(false);
     expect(result.subject).toContain("Acme Corp");
   });
+
+  // (f) fake model returns empty string → fallback aiUsed: false
+  it("falls back with aiUsed:false when model returns an empty string", async () => {
+    const factory = makeSuccessFactory("");
+    const result = await personalize({ ...BASE_INPUT, apiKey: "test-key" }, factory);
+
+    expect(result.aiUsed).toBe(false);
+    expect(result.subject).toBe("Application for Acme Corp");
+    expect(result.body).toContain("Acme Corp");
+  });
+
+  // (g) fake model returns whitespace-only string → fallback aiUsed: false
+  it("falls back with aiUsed:false when model returns a whitespace-only string", async () => {
+    const factory = makeSuccessFactory("   \n\t  ");
+    const result = await personalize({ ...BASE_INPUT, apiKey: "test-key" }, factory);
+
+    expect(result.aiUsed).toBe(false);
+    expect(result.subject).toBe("Application for Acme Corp");
+    expect(result.body).toContain("Acme Corp");
+  });
+
+  // (h) fake model returns JSON with whitespace-only subject/body → Zod trim+min(1) fails → fallback
+  it("falls back with aiUsed:false when model returns JSON with whitespace-only subject", async () => {
+    const factory = makeSuccessFactory(JSON.stringify({ subject: "   ", body: "Some body text" }));
+    const result = await personalize({ ...BASE_INPUT, apiKey: "test-key" }, factory);
+
+    expect(result.aiUsed).toBe(false);
+    expect(result.subject).toBe("Application for Acme Corp");
+  });
+
+  it("falls back with aiUsed:false when model returns JSON with whitespace-only body", async () => {
+    const factory = makeSuccessFactory(JSON.stringify({ subject: "Some subject", body: "   " }));
+    const result = await personalize({ ...BASE_INPUT, apiKey: "test-key" }, factory);
+
+    expect(result.aiUsed).toBe(false);
+    expect(result.subject).toBe("Application for Acme Corp");
+  });
 });
