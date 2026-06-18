@@ -11,6 +11,8 @@ import { contactsRoutes } from "./modules/contacts/contacts.routes.js";
 import { templatesRoutes } from "./modules/templates/templates.routes.js";
 import { settingsRoutes } from "./modules/settings/settings.routes.js";
 import { campaignRoutes } from "./modules/campaign/campaign.routes.js";
+import { logsRoutes } from "./modules/logs/logs.routes.js";
+import { analyticsRoutes } from "./modules/analytics/analytics.routes.js";
 
 export async function buildApp() {
   const app = Fastify({ logger: false });
@@ -26,5 +28,7 @@ export async function buildApp() {
   await app.register(templatesRoutes, { prefix: "/templates" });
   await app.register(settingsRoutes, { prefix: "/settings" });
   await app.register(campaignRoutes, { prefix: "/campaign" });
+  await app.register(logsRoutes, { prefix: "/logs" });
+  await app.register(analyticsRoutes, { prefix: "/analytics" });
   return app;
 }

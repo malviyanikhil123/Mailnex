@@ -1,89 +1,69 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import type { FastifyInstance } from "fastify";
 import { dbEnabled } from "../../test-helpers/db.js";
 
 /**
  * Templates routes integration tests.
  *
- * Unit-level auth guard tests run without DB (401 path).
+ * Unit-level auth guard tests run without DB (401 path). The app is built once
+ * for the whole block (these tests are stateless) — this avoids paying the
+ * cold-start module-load cost on every test, which on Windows can otherwise
+ * brush Vitest's default 5s timeout and flake.
  * Full CRUD happy path is DB-gated.
  */
 describe("templates routes (auth guard, no DB required)", () => {
-  it("POST /templates returns 401 without token", async () => {
-    const { buildApp } = await import("../../app.js");
-    const app = await buildApp();
-    await app.ready();
+  let app: FastifyInstance;
 
+  beforeAll(async () => {
+    const { buildApp } = await import("../../app.js");
+    app = await buildApp();
+    await app.ready();
+  }, 30000);
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it("POST /templates returns 401 without token", async () => {
     const res = await app.inject({
       method: "POST",
       url: "/templates",
       payload: { name: "t", subject: "s", body: "b" },
     });
     expect(res.statusCode).toBe(401);
-
-    await app.close();
   });
 
   it("GET /templates returns 401 without token", async () => {
-    const { buildApp } = await import("../../app.js");
-    const app = await buildApp();
-    await app.ready();
-
     const res = await app.inject({ method: "GET", url: "/templates" });
     expect(res.statusCode).toBe(401);
-
-    await app.close();
   });
 
   it("GET /templates/:id returns 401 without token", async () => {
-    const { buildApp } = await import("../../app.js");
-    const app = await buildApp();
-    await app.ready();
-
     const res = await app.inject({ method: "GET", url: "/templates/1" });
     expect(res.statusCode).toBe(401);
-
-    await app.close();
   });
 
   it("PUT /templates/:id returns 401 without token", async () => {
-    const { buildApp } = await import("../../app.js");
-    const app = await buildApp();
-    await app.ready();
-
     const res = await app.inject({
       method: "PUT",
       url: "/templates/1",
       payload: { subject: "new" },
     });
     expect(res.statusCode).toBe(401);
-
-    await app.close();
   });
 
   it("DELETE /templates/:id returns 401 without token", async () => {
-    const { buildApp } = await import("../../app.js");
-    const app = await buildApp();
-    await app.ready();
-
     const res = await app.inject({ method: "DELETE", url: "/templates/1" });
     expect(res.statusCode).toBe(401);
-
-    await app.close();
   });
 
   it("POST /templates/:id/preview returns 401 without token", async () => {
-    const { buildApp } = await import("../../app.js");
-    const app = await buildApp();
-    await app.ready();
-
     const res = await app.inject({
       method: "POST",
       url: "/templates/1/preview",
       payload: { name: "Alice" },
     });
     expect(res.statusCode).toBe(401);
-
-    await app.close();
   });
 });
 
