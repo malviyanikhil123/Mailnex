@@ -161,4 +161,24 @@ describe("TemplatesService (unit, mocked repo)", () => {
     expect(result.subject).toBe("Hello {{name}}");
     expect(result.body).toBe("Hi there");
   });
+
+  it("pickRandomActive delegates to repo.pickRandomActive", async () => {
+    const { TemplatesService } = await import("./templates.service.js");
+    const service = new TemplatesService(repo);
+
+    const tpl = {
+      id: 3,
+      name: "promo",
+      subject: "Special offer",
+      body: "Check this out",
+      category: "promo",
+      version: 1,
+      active: true,
+    };
+    (repo.pickRandomActive as ReturnType<typeof vi.fn>).mockResolvedValue(tpl);
+
+    const result = await service.pickRandomActive();
+    expect(repo.pickRandomActive).toHaveBeenCalled();
+    expect(result).toEqual(tpl);
+  });
 });

@@ -33,4 +33,20 @@ describe("interpolate", () => {
   it("handles empty template string", () => {
     expect(interpolate("", { key: "val" })).toBe("");
   });
+
+  it("replaces a hyphenated key {{first-name}}", () => {
+    expect(interpolate("Hi {{first-name}}", { "first-name": "Alice" })).toBe(
+      "Hi Alice",
+    );
+  });
+
+  it("replaces a key with surrounding spaces {{ company }}", () => {
+    expect(interpolate("Welcome to {{ company }}!", { company: "Acme" })).toBe(
+      "Welcome to Acme!",
+    );
+  });
+
+  it("leaves an unknown key {{unknown}} untouched", () => {
+    expect(interpolate("Hi {{unknown}}", {})).toBe("Hi {{unknown}}");
+  });
 });
