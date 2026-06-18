@@ -7,6 +7,7 @@ import multipart from "@fastify/multipart";
 import { env } from "./config/env.js";
 import { registerErrorHandler } from "./middleware/error-handler.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
+import { contactsRoutes } from "./modules/contacts/contacts.routes.js";
 
 export async function buildApp() {
   const app = Fastify({ logger: false });
@@ -18,5 +19,6 @@ export async function buildApp() {
   registerErrorHandler(app);
   app.get("/health", async () => ({ status: "ok" }));
   await app.register(authRoutes, { prefix: "/auth" });
+  await app.register(contactsRoutes, { prefix: "/contacts" });
   return app;
 }
