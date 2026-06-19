@@ -2,7 +2,7 @@
  * Auth routes integration tests.
  *
  * Requires a real PostgreSQL database and the admin seed.
- * Run with: RUN_DB_TESTS=1 DATABASE_URL=<real-url> npx vitest run src/modules/auth/auth.routes.test.ts
+ * Run with: RUN_DB_TESTS=1 DB_HOST=... DB_PORT=... DB_USERNAME=... DB_PASSWORD=... DB_DATABASE=... npx vitest run src/modules/auth/auth.routes.test.ts
  *
  * Without RUN_DB_TESTS, the entire suite is SKIPPED (not failed) so the
  * regular CI run stays green.

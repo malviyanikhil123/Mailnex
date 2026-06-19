@@ -26,9 +26,9 @@
     "jsonwebtoken": "^9.0.3",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.14",
+    "pg": "^8.12.0",
     "pino": "^9.3.2",
     "pino-pretty": "^11.2.2",
-    "postgres": "^3.4.4",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -37,6 +37,7 @@
     "@types/node": "^20.14.15",
     "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^6.4.15",
+    "@types/pg": "^8.11.6",
     "drizzle-kit": "^0.24.0",
     "tsx": "^4.16.5",
     "typescript": "^5.5.4",

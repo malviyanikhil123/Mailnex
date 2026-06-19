@@ -5,7 +5,7 @@
  * Idempotent — template inserts use onConflictDoNothing targeting the
  * (name, category) unique index; other inserts rely on their own unique
  * constraints. Re-running is safe once the DB schema is up to date.
- * Requires a live DATABASE_URL in environment (or .env file).
+ * Requires live DB_HOST/DB_PORT/DB_USERNAME/DB_PASSWORD/DB_DATABASE in environment (or .env file).
  */
 import { db } from "../index.js";
 import { emailTemplates, appSettings, campaignSettings } from "../schema/index.js";
