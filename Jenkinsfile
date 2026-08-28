@@ -21,12 +21,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 deleteDir()
-
-                git(
-                    branch: 'main',
-                    credentialsId: 'github-creds',
-                    url: 'https://github.com/malviyanikhil123/Mailnex.git'
-                )
+                checkout scm
             }
         }
 
@@ -53,9 +48,6 @@ pipeline {
                 script {
 
                     if (params.SERVICE == 'BACKEND' || params.SERVICE == 'BOTH') {
-
-                        echo "========== Building Mailnex Backend =========="
-
                         dir('backend') {
                             sh """
                                 docker build -t ${IMAGE_API} .
@@ -65,9 +57,6 @@ pipeline {
                     }
 
                     if (params.SERVICE == 'FRONTEND' || params.SERVICE == 'BOTH') {
-
-                        echo "========== Building Mailnex Frontend =========="
-
                         dir('frontend') {
                             sh """
                                 docker build -t ${IMAGE_UI} .
@@ -84,9 +73,6 @@ pipeline {
                 script {
 
                     if (params.SERVICE == 'BACKEND' || params.SERVICE == 'BOTH') {
-
-                        echo "========== Deploying Mailnex Backend =========="
-
                         sh """
                             docker compose -f ${COMPOSE_FILE} pull mailnex-api
                             docker compose -f ${COMPOSE_FILE} up -d --no-deps --force-recreate mailnex-api
@@ -94,9 +80,6 @@ pipeline {
                     }
 
                     if (params.SERVICE == 'FRONTEND' || params.SERVICE == 'BOTH') {
-
-                        echo "========== Deploying Mailnex Frontend =========="
-
                         sh """
                             docker compose -f ${COMPOSE_FILE} pull mailnex-ui
                             docker compose -f ${COMPOSE_FILE} up -d --no-deps --force-recreate mailnex-ui
@@ -108,17 +91,12 @@ pipeline {
     }
 
     post {
-
         success {
-            echo "========================================"
             echo "Mailnex Deployment Successful"
-            echo "========================================"
         }
 
         failure {
-            echo "========================================"
             echo "Mailnex Deployment Failed"
-            echo "========================================"
         }
 
         always {
