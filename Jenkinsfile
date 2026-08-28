@@ -25,7 +25,7 @@ pipeline {
                 git(
                     branch: 'main',
                     credentialsId: 'github-creds',
-                    url: 'https://github.com/your-user/Mailnex.git'
+                    url: 'https://github.com/malviyanikhil123/Mailnex.git'
                 )
             }
         }
