@@ -11,7 +11,7 @@ pipeline {
 
     environment {
         IMAGE_API = "nikhilmalviya80/mailnex-api:latest"
-        IMAGE_UI = "nikhilmalviya80/mailnex-ui:latest"
+        IMAGE_UI  = "nikhilmalviya80/mailnex-ui:latest"
 
         COMPOSE_FILE = "/home/nikhil_malviya/docker/Mailex/docker-compose.yml"
     }
@@ -39,9 +39,10 @@ pipeline {
                         passwordVariable: 'DOCKER_PASSWORD'
                     )
                 ]) {
-
                     sh '''
-                    echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+                        echo "$DOCKER_PASSWORD" | docker login \
+                            -u "$DOCKER_USERNAME" \
+                            --password-stdin
                     '''
                 }
             }
@@ -53,7 +54,7 @@ pipeline {
 
                     if (params.SERVICE == 'BACKEND' || params.SERVICE == 'BOTH') {
 
-                        echo "========== Building Backend =========="
+                        echo "========== Building Mailnex Backend =========="
 
                         dir('backend') {
                             sh """
@@ -65,7 +66,7 @@ pipeline {
 
                     if (params.SERVICE == 'FRONTEND' || params.SERVICE == 'BOTH') {
 
-                        echo "========== Building Frontend =========="
+                        echo "========== Building Mailnex Frontend =========="
 
                         dir('frontend') {
                             sh """
@@ -74,7 +75,6 @@ pipeline {
                             """
                         }
                     }
-
                 }
             }
         }
@@ -85,7 +85,7 @@ pipeline {
 
                     if (params.SERVICE == 'BACKEND' || params.SERVICE == 'BOTH') {
 
-                        echo "========== Deploying Backend =========="
+                        echo "========== Deploying Mailnex Backend =========="
 
                         sh """
                             docker compose -f ${COMPOSE_FILE} pull mailnex-api
@@ -95,18 +95,16 @@ pipeline {
 
                     if (params.SERVICE == 'FRONTEND' || params.SERVICE == 'BOTH') {
 
-                        echo "========== Deploying Frontend =========="
+                        echo "========== Deploying Mailnex Frontend =========="
 
                         sh """
                             docker compose -f ${COMPOSE_FILE} pull mailnex-ui
                             docker compose -f ${COMPOSE_FILE} up -d --no-deps --force-recreate mailnex-ui
                         """
                     }
-
                 }
             }
         }
-
     }
 
     post {
