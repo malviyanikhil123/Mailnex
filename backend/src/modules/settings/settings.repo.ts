@@ -6,28 +6,26 @@ import { eq } from "drizzle-orm";
 export type AppSettings = typeof appSettings.$inferSelect;
 export type CampaignSettings = typeof campaignSettings.$inferSelect;
 
-/** Repository for the single-row app_settings and campaign_settings tables.
- *  Both tables are seeded with one row; patch methods update that row (and
- *  fall back to inserting one if the table is empty). */
+/** Repository for per-user app_settings and campaign_settings tables. */
 export interface ISettingsRepo {
-  getApp(): Promise<AppSettings | null>;
-  patchApp(patch: Partial<AppSettings>): Promise<AppSettings>;
-  getCampaign(): Promise<CampaignSettings | null>;
-  patchCampaign(patch: Partial<CampaignSettings>): Promise<CampaignSettings>;
+  getApp(userId: number): Promise<AppSettings | null>;
+  patchApp(userId: number, patch: Partial<AppSettings>): Promise<AppSettings>;
+  getCampaign(userId: number): Promise<CampaignSettings | null>;
+  patchCampaign(userId: number, patch: Partial<CampaignSettings>): Promise<CampaignSettings>;
 }
 
 export class SettingsRepo implements ISettingsRepo {
-  async getApp(): Promise<AppSettings | null> {
-    const [row] = await db.select().from(appSettings).limit(1);
+  async getApp(userId: number): Promise<AppSettings | null> {
+    const [row] = await db.select().from(appSettings).where(eq(appSettings.userId, userId)).limit(1);
     return row ?? null;
   }
 
-  async patchApp(patch: Partial<AppSettings>): Promise<AppSettings> {
-    const existing = await this.getApp();
+  async patchApp(userId: number, patch: Partial<AppSettings>): Promise<AppSettings> {
+    const existing = await this.getApp(userId);
     if (!existing) {
       const [row] = await db
         .insert(appSettings)
-        .values({ ...patch, updatedAt: new Date() })
+        .values({ ...patch, userId, updatedAt: new Date() })
         .returning();
       return row;
     }
@@ -39,17 +37,17 @@ export class SettingsRepo implements ISettingsRepo {
     return row;
   }
 
-  async getCampaign(): Promise<CampaignSettings | null> {
-    const [row] = await db.select().from(campaignSettings).limit(1);
+  async getCampaign(userId: number): Promise<CampaignSettings | null> {
+    const [row] = await db.select().from(campaignSettings).where(eq(campaignSettings.userId, userId)).limit(1);
     return row ?? null;
   }
 
-  async patchCampaign(patch: Partial<CampaignSettings>): Promise<CampaignSettings> {
-    const existing = await this.getCampaign();
+  async patchCampaign(userId: number, patch: Partial<CampaignSettings>): Promise<CampaignSettings> {
+    const existing = await this.getCampaign(userId);
     if (!existing) {
       const [row] = await db
         .insert(campaignSettings)
-        .values({ ...patch, updatedAt: new Date() })
+        .values({ ...patch, userId, updatedAt: new Date() })
         .returning();
       return row;
     }

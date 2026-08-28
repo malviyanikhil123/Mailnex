@@ -6,6 +6,7 @@ import { AppLayout } from "./layouts/AppLayout";
 import { Toaster } from "./components/ui/Toaster";
 import { useTheme } from "./store/theme";
 import Login from "./pages/Login";
+import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Contacts from "./pages/Contacts";
 import Templates from "./pages/Templates";
@@ -15,7 +16,14 @@ import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      staleTime: 5000,
+    },
+  },
 });
 
 export default function App() {
@@ -27,6 +35,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
           <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
               <Route path="/" element={<Dashboard />} />

@@ -13,8 +13,16 @@ function Stat({ label, value }: { label: string; value: number | string }) {
 }
 
 export default function Dashboard() {
-  const stats = useQuery({ queryKey: ["dashboard"], queryFn: analyticsApi.dashboard });
-  const daily = useQuery({ queryKey: ["daily", 14], queryFn: () => analyticsApi.daily(14) });
+  const stats = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: analyticsApi.dashboard,
+    refetchInterval: 10000,
+  });
+  const daily = useQuery({
+    queryKey: ["daily", 14],
+    queryFn: () => analyticsApi.daily(14),
+    refetchInterval: 30000,
+  });
 
   if (stats.isLoading) return <Spinner />;
   if (stats.isError || !stats.data) return <ErrorState message="Failed to load dashboard." />;
@@ -50,30 +58,32 @@ export default function Dashboard() {
         {d.importHistory.length === 0 ? (
           <p className="text-sm text-gray-500">No imports yet.</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="text-left text-gray-500">
-              <tr>
-                <th className="py-1">File</th>
-                <th>Total</th>
-                <th>Imported</th>
-                <th>Duplicate</th>
-                <th>Invalid</th>
-                <th>Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {d.importHistory.map((imp) => (
-                <tr key={imp.id} className="border-t border-gray-100 dark:border-gray-800">
-                  <td className="py-1">{imp.fileName}</td>
-                  <td>{imp.totalRows}</td>
-                  <td>{imp.importedRows}</td>
-                  <td>{imp.duplicateRows}</td>
-                  <td>{imp.invalidRows}</td>
-                  <td>{new Date(imp.createdAt).toLocaleString()}</td>
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
+            <table className="w-full text-sm min-w-[500px]">
+              <thead className="text-left text-gray-500 text-xs uppercase">
+                <tr>
+                  <th className="py-2 px-3">File</th>
+                  <th className="py-2 px-3">Total</th>
+                  <th className="py-2 px-3">Imported</th>
+                  <th className="py-2 px-3">Duplicate</th>
+                  <th className="py-2 px-3">Invalid</th>
+                  <th className="py-2 px-3">Date</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {d.importHistory.map((imp) => (
+                  <tr key={imp.id} className="border-t border-gray-100 dark:border-gray-800 text-xs sm:text-sm">
+                    <td className="py-2 px-3 font-medium">{imp.fileName}</td>
+                    <td className="py-2 px-3">{imp.totalRows}</td>
+                    <td className="py-2 px-3 text-emerald-600 font-semibold">{imp.importedRows}</td>
+                    <td className="py-2 px-3 text-amber-600">{imp.duplicateRows}</td>
+                    <td className="py-2 px-3 text-red-600">{imp.invalidRows}</td>
+                    <td className="py-2 px-3 text-gray-500">{new Date(imp.createdAt).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
     </div>

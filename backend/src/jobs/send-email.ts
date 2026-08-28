@@ -1,6 +1,7 @@
 import * as path from "path";
 import { LIMITS } from "../config/constants.js";
 import { interpolate } from "../utils/interpolate.js";
+import { formatEmailHtml } from "../utils/format-email.js";
 import { logger } from "../utils/logger.js";
 import { classifyFailure } from "../integrations/email/classify-failure.js";
 import type { EmailProvider } from "../integrations/email/provider.js";
@@ -17,6 +18,8 @@ export interface ContactRow {
   email: string;
   status: string;
   retryCount: number;
+  lastContactedAt?: Date | null;
+  sentAt?: Date | null;
 }
 
 export interface CampaignPort {
@@ -33,7 +36,7 @@ export interface CampaignPort {
 }
 
 export interface TemplatePort {
-  pickRandomActive(): Promise<{ id: number; subject: string; body: string } | undefined | null>;
+  pickRandomActive(options?: { isFollowup?: boolean }): Promise<{ id: number; subject: string; body: string } | undefined | null>;
 }
 
 export interface SettingsPort {
@@ -128,8 +131,9 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
 
   await deps.campaign.markContactProcessing(contactId);
 
-  // Pick a template.
-  const template = await deps.templates.pickRandomActive();
+  // Pick a template: first-time contacts never get follow-up templates
+  const isFollowup = !!(contact.sentAt || contact.lastContactedAt);
+  const template = await deps.templates.pickRandomActive({ isFollowup });
   if (!template) {
     logger.warn({ contactId }, "send-email: no active template available");
     await deps.logs.create({
@@ -150,11 +154,19 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
   // let Gemini personalize on top (with template fallback inside personalize()).
   const profile = await deps.settings.getCandidateProfile();
   const signature = deps.settings.buildSignature(profile);
+  const userRole = profile.role?.trim() || "the open role";
+  const userExperience = profile.experience?.trim() || "";
+  const userSkills = profile.skills && profile.skills.length > 0 ? profile.skills.join(", ") : "";
+
   const flatVars: Record<string, string> = {
     company: contact.companyName,
     location: contact.location ?? "",
     candidateName: profile.name ?? "",
     candidateEmail: profile.email ?? "",
+    role: userRole,
+    targetRole: userRole,
+    experience: userExperience,
+    skills: userSkills,
     signature,
   };
   const rendered = {
@@ -202,7 +214,7 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
 
   try {
     const provider = await deps.getProvider();
-    await provider.send({ to: recipient, subject, html: body, attachments });
+    await provider.send({ to: recipient, subject, html: formatEmailHtml(body), attachments });
 
     await deps.logs.create({
       contactId,

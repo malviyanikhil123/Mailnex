@@ -1,6 +1,11 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { env } from "../../config/env.js";
+import { db } from "../../db/index.js";
+import { appSettings } from "../../db/schema/settings.js";
+import { campaignSettings } from "../../db/schema/campaign.js";
+import { emailTemplates } from "../../db/schema/templates.js";
+import { TEMPLATE_SEED } from "../../db/seed/templates.js";
 import type { AuthRepo } from "./auth.repo.js";
 
 // Fixed dummy hash used to equalize timing when a user is not found.
@@ -11,6 +16,35 @@ export class AuthService {
     private repo: AuthRepo,
     private signAccess: (payload: object) => string,
   ) {}
+
+  async register(name: string, email: string, password: string) {
+    // Check if user already exists
+    const existing = await this.repo.findByEmail(email);
+    if (existing) {
+      const e: any = new Error("An account with this email already exists");
+      e.statusCode = 409;
+      throw e;
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const user = await this.repo.create({ name, email, passwordHash });
+
+    // Create default settings for the new user
+    await db.insert(appSettings).values({
+      userId: user.id,
+      candidateProfile: JSON.stringify({ name, email }),
+    }).onConflictDoNothing();
+
+    await db.insert(campaignSettings).values({
+      userId: user.id,
+    }).onConflictDoNothing();
+
+    // Seed default templates for the new user (all deselected by default)
+    const templateRows = TEMPLATE_SEED.map((t) => ({ ...t, userId: user.id, active: false }));
+    await db.insert(emailTemplates).values(templateRows).onConflictDoNothing();
+
+    return this.issue(user);
+  }
 
   async login(email: string, password: string) {
     const u = await this.repo.findByEmail(email);

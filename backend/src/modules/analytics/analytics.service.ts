@@ -51,15 +51,15 @@ function todayKey(now: Date): string {
 export class AnalyticsService {
   constructor(private repo: AnalyticsRepo = analyticsRepo) {}
 
-  async dashboard(now: Date = new Date()): Promise<DashboardStats> {
+  async dashboard(userId: number, now: Date = new Date()): Promise<DashboardStats> {
     const [contacts, logs, emailsSentToday, totalImportedContacts, averageEmailsPerDay, importHistory] =
       await Promise.all([
-        this.repo.contactCounts(),
-        this.repo.logCounts(),
-        this.repo.emailsSentToday(todayKey(now)),
-        this.repo.totalImportedContacts(),
-        this.repo.averageEmailsPerDay(),
-        this.repo.importHistory(5),
+        this.repo.contactCounts(userId),
+        this.repo.logCounts(userId),
+        this.repo.emailsSentToday(userId, todayKey(now)),
+        this.repo.totalImportedContacts(userId),
+        this.repo.averageEmailsPerDay(userId),
+        this.repo.importHistory(userId, 5),
       ]);
 
     const rates = computeRates({ sent: logs.sent, failed: logs.failed, bounced: logs.bounced });
@@ -84,12 +84,12 @@ export class AnalyticsService {
     };
   }
 
-  daily(days = 14): Promise<TrendPoint[]> {
-    return this.repo.dailyTrends(days);
+  daily(userId: number, days = 14): Promise<TrendPoint[]> {
+    return this.repo.dailyTrends(userId, days);
   }
 
-  monthly(months = 12): Promise<TrendPoint[]> {
-    return this.repo.monthlyTrends(months);
+  monthly(userId: number, months = 12): Promise<TrendPoint[]> {
+    return this.repo.monthlyTrends(userId, months);
   }
 }
 

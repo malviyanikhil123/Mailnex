@@ -1,6 +1,8 @@
 import { db } from "../../db/index.js";
 import { contacts } from "../../db/schema/contacts.js";
 import { contactsImports } from "../../db/schema/imports.js";
+import { campaignQueue } from "../../db/schema/campaign.js";
+import { emailLogs } from "../../db/schema/logs.js";
 import { ilike, eq, or, and, count } from "drizzle-orm";
 import type { ListContactsQuery } from "./contacts.schema.js";
 import type { contactStatus } from "../../db/schema/enums.js";
@@ -23,19 +25,7 @@ export type ImportSummary = {
 };
 
 export class ContactsRepo {
-  /**
-   * Bulk-insert contacts in chunks of 1000, ignoring email conflicts.
-   *
-   * Uses .returning({ id: contacts.id }) per chunk to count actual inserts.
-   * Rows that conflict on email are silently dropped by onConflictDoNothing,
-   * so the returned array is shorter than the chunk — the difference equals
-   * DB-level duplicates.
-   *
-   * Counting semantics:
-   *   inserted = sum of returned rows across all chunks
-   *   duplicateRows (in ImportSummary) = withinFileDups + (validUniqueRows - inserted)
-   */
-  async bulkInsert(rows: ContactInsertRow[]): Promise<{ inserted: number }> {
+  async bulkInsert(userId: number, rows: ContactInsertRow[]): Promise<{ inserted: number }> {
     if (rows.length === 0) return { inserted: 0 };
 
     const CHUNK_SIZE = 1000;
@@ -45,8 +35,8 @@ export class ContactsRepo {
       const chunk = rows.slice(i, i + CHUNK_SIZE);
       const result = await db
         .insert(contacts)
-        .values(chunk)
-        .onConflictDoNothing({ target: contacts.email })
+        .values(chunk.map((r) => ({ ...r, userId })))
+        .onConflictDoNothing()
         .returning({ id: contacts.id });
       inserted += result.length;
     }
@@ -54,24 +44,24 @@ export class ContactsRepo {
     return { inserted };
   }
 
-  async list(query: ListContactsQuery) {
+  async list(userId: number, query: ListContactsQuery) {
     const { search, status, page, limit } = query;
     const offset = (page - 1) * limit;
 
-    const conditions = [];
+    const conditions = [eq(contacts.userId, userId)];
     if (search) {
       conditions.push(
         or(
           ilike(contacts.companyName, `%${search}%`),
           ilike(contacts.email, `%${search}%`),
-        ),
+        )!,
       );
     }
     if (status) {
       conditions.push(eq(contacts.status, status as ContactStatusValue));
     }
 
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = and(...conditions);
 
     const [rows, totalResult] = await Promise.all([
       db.select().from(contacts).where(where).limit(limit).offset(offset),
@@ -81,23 +71,31 @@ export class ContactsRepo {
     return { rows, total: Number(totalResult[0]?.total ?? 0) };
   }
 
-  async getById(id: number) {
-    const [row] = await db.select().from(contacts).where(eq(contacts.id, id));
+  async getById(userId: number, id: number) {
+    const [row] = await db.select().from(contacts).where(and(eq(contacts.id, id), eq(contacts.userId, userId)));
     return row ?? null;
   }
 
-  async delete(id: number) {
-    const [row] = await db
-      .delete(contacts)
-      .where(eq(contacts.id, id))
-      .returning({ id: contacts.id });
-    return row ?? null;
+  async delete(userId: number, id: number) {
+    return db.transaction(async (tx) => {
+      // 1. Remove pending queue entries for this contact
+      await tx.delete(campaignQueue).where(eq(campaignQueue.contactId, id));
+      // 2. Remove email logs associated with this contact
+      await tx.delete(emailLogs).where(eq(emailLogs.contactId, id));
+      // 3. Delete the contact (scoped to user)
+      const [row] = await tx
+        .delete(contacts)
+        .where(and(eq(contacts.id, id), eq(contacts.userId, userId)))
+        .returning({ id: contacts.id });
+      return row ?? null;
+    });
   }
 
-  async recordImport(summary: ImportSummary) {
+  async recordImport(userId: number, summary: ImportSummary) {
     const [row] = await db
       .insert(contactsImports)
       .values({
+        userId,
         fileName: summary.fileName,
         totalRows: summary.total,
         importedRows: summary.imported,
@@ -109,10 +107,11 @@ export class ContactsRepo {
     return row;
   }
 
-  async listImports() {
+  async listImports(userId: number) {
     return db
       .select()
       .from(contactsImports)
+      .where(eq(contactsImports.userId, userId))
       .orderBy(contactsImports.createdAt);
   }
 }

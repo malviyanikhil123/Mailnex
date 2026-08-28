@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import * as os from "os";
 import * as path from "path";
 import * as crypto from "crypto";
@@ -7,22 +7,18 @@ import ExcelJS from "exceljs";
 import { dbEnabled } from "../../test-helpers/db.js";
 
 // ---- Unit tests for import service (mocked repo) ----
-// These run without a real DB by injecting a fake repo via constructor.
 
 describe("ContactsService.importFromFile (unit, mocked repo)", () => {
-  // ExcelJS streaming can be slow; allow 15 s for this test
   it("returns correct summary and calls recordImport with counts", async () => {
-    // Create fixture xlsx:
-    //   3 valid rows, 1 invalid email, 1 within-file duplicate
     const tmpFile = path.join(os.tmpdir(), `${crypto.randomUUID()}.xlsx`);
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Sheet1");
     ws.addRow(["companyName", "location", "email"]);
-    ws.addRow(["Acme Inc", "New York", "alice@acme.com"]); // valid
-    ws.addRow(["Globex", "LA", "bob@globex.com"]); // valid
-    ws.addRow(["Initech", "Austin", "charlie@initech.com"]); // valid
-    ws.addRow(["BadCo", "Nowhere", "not-an-email"]); // invalid
-    ws.addRow(["Acme Inc", "New York", "alice@acme.com"]); // dup within file
+    ws.addRow(["Acme Inc", "New York", "alice@acme.com"]);
+    ws.addRow(["Globex", "LA", "bob@globex.com"]);
+    ws.addRow(["Initech", "Austin", "charlie@initech.com"]);
+    ws.addRow(["BadCo", "Nowhere", "not-an-email"]);
+    ws.addRow(["Acme Inc", "New York", "alice@acme.com"]);
     await wb.xlsx.writeFile(tmpFile);
 
     const mockBulkInsert = vi.fn().mockResolvedValue({ inserted: 3 });
@@ -38,24 +34,20 @@ describe("ContactsService.importFromFile (unit, mocked repo)", () => {
 
     const service = new ContactsService(fakeRepo);
     const jobId = crypto.randomUUID();
+    const userId = 1;
 
-    const summary = await service.importFromFile(tmpFile, "test.xlsx", jobId);
+    const summary = await service.importFromFile(userId, tmpFile, "test.xlsx", jobId);
 
-    // 5 data rows total
-    // 1 invalid (not-an-email)
-    // 4 valid rows, but 1 is within-file dup of alice@acme.com
-    // => 3 unique valid rows submitted to bulkInsert
-    // bulkInsert mock returns { inserted: 3 }, so dbDups = 3 - 3 = 0
-    // duplicate = withinFileDup(1) + dbDups(0) = 1
     expect(summary.total).toBe(5);
     expect(summary.invalid).toBe(1);
-    expect(summary.duplicate).toBe(1); // within-file dup
-    expect(summary.imported).toBe(3); // actually inserted
+    expect(summary.duplicate).toBe(1);
+    expect(summary.imported).toBe(3);
     expect(summary.skipped).toBe(0);
 
     expect(mockBulkInsert).toHaveBeenCalledOnce();
     expect(mockRecordImport).toHaveBeenCalledOnce();
     expect(mockRecordImport).toHaveBeenCalledWith(
+      userId,
       expect.objectContaining({
         fileName: "test.xlsx",
         total: 5,
@@ -65,12 +57,10 @@ describe("ContactsService.importFromFile (unit, mocked repo)", () => {
       }),
     );
 
-    // Progress map should be done
     const { importProgress } = await import("./contacts.service.js");
     expect(importProgress.get(jobId)?.done).toBe(true);
     expect(importProgress.get(jobId)?.summary?.imported).toBe(3);
 
-    // FIX A: temp file must have been deleted by importFromFile
     await expect(fs.access(tmpFile)).rejects.toThrow();
   }, 15_000);
 
@@ -92,10 +82,9 @@ describe("ContactsService.importFromFile (unit, mocked repo)", () => {
 
     const service = new ContactsService(fakeRepo);
     const jobId = crypto.randomUUID();
+    const userId = 1;
 
-    await expect(service.importFromFile(tmpFile, "err.xlsx", jobId)).rejects.toThrow("DB down");
-
-    // FIX A: file must be cleaned up even on failure
+    await expect(service.importFromFile(userId, tmpFile, "err.xlsx", jobId)).rejects.toThrow("DB down");
     await expect(fs.access(tmpFile)).rejects.toThrow();
   });
 });
@@ -103,21 +92,21 @@ describe("ContactsService.importFromFile (unit, mocked repo)", () => {
 // ---- DB integration tests (gated) ----
 
 describe.skipIf(!dbEnabled)("ContactsRepo integration (DB gated)", () => {
+  const userId = 1;
+
   it("bulkInsert inserts contacts and ignores email conflicts", async () => {
     const { contactsRepo } = await import("./contacts.repo.js");
     const { db } = await import("../../db/index.js");
     const { contacts } = await import("../../db/schema/contacts.js");
 
-    // Truncate
     await db.delete(contacts);
 
-    const result = await contactsRepo.bulkInsert([
+    const result = await contactsRepo.bulkInsert(userId, [
       { companyName: "TestCo", location: "NY", email: "test@testco.com" },
     ]);
     expect(result.inserted).toBe(1);
 
-    // Duplicate should be ignored (onConflictDoNothing)
-    const result2 = await contactsRepo.bulkInsert([
+    const result2 = await contactsRepo.bulkInsert(userId, [
       { companyName: "TestCo", location: "NY", email: "test@testco.com" },
     ]);
     expect(result2.inserted).toBe(0);
@@ -129,12 +118,12 @@ describe.skipIf(!dbEnabled)("ContactsRepo integration (DB gated)", () => {
     const { contacts } = await import("../../db/schema/contacts.js");
 
     await db.delete(contacts);
-    await contactsRepo.bulkInsert([
+    await contactsRepo.bulkInsert(userId, [
       { companyName: "Alpha Corp", location: "NY", email: "alpha@alpha.com" },
       { companyName: "Beta Inc", location: "LA", email: "beta@beta.com" },
     ]);
 
-    const result = await contactsRepo.list({ search: "alpha", page: 1, limit: 10 });
+    const result = await contactsRepo.list(userId, { search: "alpha", page: 1, limit: 10 });
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0].email).toBe("alpha@alpha.com");
     expect(result.total).toBe(1);
@@ -148,14 +137,14 @@ describe.skipIf(!dbEnabled)("ContactsRepo integration (DB gated)", () => {
     await db.delete(contacts);
     const [inserted] = await db
       .insert(contacts)
-      .values({ companyName: "Test", location: "TX", email: "test@test.com" })
+      .values({ userId, companyName: "Test", location: "TX", email: "test@test.com" })
       .returning();
 
-    const found = await contactsRepo.getById(inserted.id);
+    const found = await contactsRepo.getById(userId, inserted.id);
     expect(found).not.toBeNull();
     expect(found?.email).toBe("test@test.com");
 
-    const notFound = await contactsRepo.getById(999999);
+    const notFound = await contactsRepo.getById(userId, 999999);
     expect(notFound).toBeNull();
   });
 
@@ -167,13 +156,13 @@ describe.skipIf(!dbEnabled)("ContactsRepo integration (DB gated)", () => {
     await db.delete(contacts);
     const [inserted] = await db
       .insert(contacts)
-      .values({ companyName: "DelTest", location: "NY", email: "del@test.com" })
+      .values({ userId, companyName: "DelTest", location: "NY", email: "del@test.com" })
       .returning();
 
-    const deleted = await contactsRepo.delete(inserted.id);
+    const deleted = await contactsRepo.delete(userId, inserted.id);
     expect(deleted).not.toBeNull();
 
-    const notFound = await contactsRepo.getById(inserted.id);
+    const notFound = await contactsRepo.getById(userId, inserted.id);
     expect(notFound).toBeNull();
   });
 
@@ -184,7 +173,7 @@ describe.skipIf(!dbEnabled)("ContactsRepo integration (DB gated)", () => {
 
     await db.delete(contactsImports);
 
-    await contactsRepo.recordImport({
+    await contactsRepo.recordImport(userId, {
       fileName: "test.xlsx",
       total: 10,
       imported: 8,
@@ -193,7 +182,7 @@ describe.skipIf(!dbEnabled)("ContactsRepo integration (DB gated)", () => {
       invalid: 1,
     });
 
-    const imports = await contactsRepo.listImports();
+    const imports = await contactsRepo.listImports(userId);
     expect(imports).toHaveLength(1);
     expect(imports[0].fileName).toBe("test.xlsx");
     expect(imports[0].importedRows).toBe(8);

@@ -9,9 +9,10 @@ import type {
 /** Stateful in-memory fake repo so encrypt→store→decrypt round-trips realistically. */
 function makeFakeRepo(): ISettingsRepo & { app: Partial<AppSettings>; campaign: Partial<CampaignSettings> } {
   const state = {
-    app: { id: 1, emailProvider: "gmail", candidateProfile: "{}" } as Partial<AppSettings>,
+    app: { id: 1, userId: 1, emailProvider: "gmail", candidateProfile: "{}" } as Partial<AppSettings>,
     campaign: {
       id: 1,
+      userId: 1,
       mode: "DRAFT",
       state: "IDLE",
       dailyLimit: 50,
@@ -24,17 +25,17 @@ function makeFakeRepo(): ISettingsRepo & { app: Partial<AppSettings>; campaign: 
   return {
     app: state.app,
     campaign: state.campaign,
-    async getApp() {
+    async getApp(_userId: number) {
       return state.app as AppSettings;
     },
-    async patchApp(patch) {
+    async patchApp(_userId: number, patch) {
       Object.assign(state.app, patch);
       return state.app as AppSettings;
     },
-    async getCampaign() {
+    async getCampaign(_userId: number) {
       return state.campaign as CampaignSettings;
     },
-    async patchCampaign(patch) {
+    async patchCampaign(_userId: number, patch) {
       Object.assign(state.campaign, patch);
       return state.campaign as CampaignSettings;
     },
@@ -44,6 +45,7 @@ function makeFakeRepo(): ISettingsRepo & { app: Partial<AppSettings>; campaign: 
 describe("SettingsService", () => {
   let repo: ReturnType<typeof makeFakeRepo>;
   let service: SettingsService;
+  const userId = 1;
 
   beforeEach(() => {
     repo = makeFakeRepo();
@@ -51,29 +53,28 @@ describe("SettingsService", () => {
   });
 
   it("encrypts the Gmail app password at rest and round-trips via getGmailCreds", async () => {
-    await service.updateGmail({ email: "me@gmail.com", appPassword: "abcd efgh ijkl mnop" });
-    // stored value must be ciphertext, not the plaintext password
+    await service.updateGmail(userId, { email: "me@gmail.com", appPassword: "abcd efgh ijkl mnop" });
     expect(repo.app.gmailAppPasswordEnc).toBeDefined();
     expect(repo.app.gmailAppPasswordEnc).not.toContain("abcd efgh ijkl mnop");
-    const creds = await service.getGmailCreds();
+    const creds = await service.getGmailCreds(userId);
     expect(creds).toEqual({ email: "me@gmail.com", password: "abcd efgh ijkl mnop" });
   });
 
   it("encrypts the Gemini key and round-trips via getGeminiKey", async () => {
-    await service.updateGemini({ apiKey: "AIzaTopSecretKey" });
+    await service.updateGemini(userId, { apiKey: "AIzaTopSecretKey" });
     expect(repo.app.geminiApiKeyEnc).toBeDefined();
     expect(repo.app.geminiApiKeyEnc).not.toContain("AIzaTopSecretKey");
-    expect(await service.getGeminiKey()).toBe("AIzaTopSecretKey");
+    expect(await service.getGeminiKey(userId)).toBe("AIzaTopSecretKey");
   });
 
   it("getGmailCreds returns null when not configured", async () => {
-    expect(await service.getGmailCreds()).toBeNull();
+    expect(await service.getGmailCreds(userId)).toBeNull();
   });
 
   it("getPublic exposes booleans and candidate but NEVER decrypted secrets", async () => {
-    await service.updateGmail({ email: "me@gmail.com", appPassword: "secretpass" });
-    await service.updateGemini({ apiKey: "secretkey" });
-    const pub = await service.getPublic();
+    await service.updateGmail(userId, { email: "me@gmail.com", appPassword: "secretpass" });
+    await service.updateGemini(userId, { apiKey: "secretkey" });
+    const pub = await service.getPublic(userId);
     expect(pub.gmailConfigured).toBe(true);
     expect(pub.geminiConfigured).toBe(true);
     expect(pub.gmailEmail).toBe("me@gmail.com");
@@ -84,8 +85,8 @@ describe("SettingsService", () => {
   });
 
   it("updateCandidate merges with the existing profile", async () => {
-    await service.updateCandidate({ name: "Nikhil", role: "Software Engineer" });
-    const merged = await service.updateCandidate({ phone: "12345" });
+    await service.updateCandidate(userId, { name: "Nikhil", role: "Software Engineer" });
+    const merged = await service.updateCandidate(userId, { phone: "12345" });
     expect(merged.name).toBe("Nikhil");
     expect(merged.role).toBe("Software Engineer");
     expect(merged.phone).toBe("12345");
@@ -112,7 +113,7 @@ describe("SettingsService", () => {
   });
 
   it("updateCampaign updates campaign row and routes emailProvider to app settings", async () => {
-    const updated = await service.updateCampaign({
+    const updated = await service.updateCampaign(userId, {
       mode: "TEST",
       dailyLimit: 25,
       testEmail: "test@example.com",

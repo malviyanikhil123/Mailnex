@@ -54,7 +54,7 @@ describe("AnalyticsService.dashboard", () => {
     } as unknown as AnalyticsRepo;
 
     const service = new AnalyticsService(repo);
-    const d = await service.dashboard(new Date(2026, 5, 18));
+    const d = await service.dashboard(1, new Date(2026, 5, 18));
 
     expect(d.totalContacts).toBe(100);
     expect(d.pending).toBe(60);

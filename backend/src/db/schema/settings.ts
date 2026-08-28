@@ -1,7 +1,9 @@
-import { pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
-// Single-row app settings; secret fields hold AES-GCM ciphertext. candidateProfile is JSON text.
+import { pgTable, serial, text, integer, timestamp } from "drizzle-orm/pg-core";
+import { users } from "./users.js";
+// Per-user app settings; secret fields hold AES-GCM ciphertext. candidateProfile is JSON text.
 export const appSettings = pgTable("app_settings", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }).unique(),
   emailProvider: text("email_provider").notNull().default("gmail"),
   gmailEmail: text("gmail_email"),
   gmailAppPasswordEnc: text("gmail_app_password_enc"),

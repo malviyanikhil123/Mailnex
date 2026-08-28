@@ -40,7 +40,7 @@ function GmailSection({ configured, email, onSaved }: { configured: boolean; ema
   return (
     <Card>
       <SectionHeader title="Gmail" badge={configured ? "Configured ✓" : "Not configured"} />
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Input placeholder="Gmail address" value={e} onChange={(ev) => setE(ev.target.value)} />
         <Input type="password" placeholder="App password (write-only)" value={pw} onChange={(ev) => setPw(ev.target.value)} />
       </div>
@@ -97,7 +97,7 @@ function CampaignSection({
   return (
     <Card>
       <SectionHeader title="Campaign" />
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <Labeled label="Daily limit">
           <Input type="number" value={dailyLimit} onChange={(e) => setDailyLimit(+e.target.value)} />
         </Labeled>
@@ -142,7 +142,7 @@ function CandidateSection({ profile, onSaved }: { profile: CandidateProfile; onS
   return (
     <Card>
       <SectionHeader title="Candidate Profile" />
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {field("name", "Name")}
         {field("phone", "Phone")}
         {field("email", "Email")}

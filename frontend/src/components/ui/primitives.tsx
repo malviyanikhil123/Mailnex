@@ -1,46 +1,71 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
+import { forwardRef } from "react";
+import type {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  TextareaHTMLAttributes,
+} from "react";
 
 export function Button({
   variant = "primary",
   className = "",
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "danger" }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: "primary" | "secondary" | "danger";
+}) {
   const variants: Record<string, string> = {
-    primary: "bg-brand-600 hover:bg-brand-700 text-white",
-    secondary: "bg-gray-200 hover:bg-gray-300 text-gray-900 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600",
-    danger: "bg-red-600 hover:bg-red-700 text-white",
+    primary:
+      "bg-[#71C9CE] hover:bg-[#51b2b8] text-gray-950 font-semibold shadow-xs transition active:scale-[0.99]",
+    secondary:
+      "bg-[#CBF1F5]/70 hover:bg-[#A6E3E9] text-[#144b50] font-medium dark:bg-[#164549] dark:text-[#E3FDFD] dark:hover:bg-[#24666b]",
+    danger: "bg-red-600 hover:bg-red-700 text-white font-medium",
   };
   return (
     <button
-      className={`rounded-lg px-4 py-2 text-sm font-medium transition disabled:opacity-50 ${variants[variant]} ${className}`}
+      className={`rounded-lg px-4 py-2 text-sm transition disabled:opacity-50 ${variants[variant]} ${className}`}
       {...props}
     />
   );
 }
 
-export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
+export function Card({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return (
     <div
-      className={`rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900 ${className}`}
+      className={`rounded-xl border border-[#CBF1F5] bg-white p-5 shadow-xs dark:border-[#164549] dark:bg-[#0e2124] ${className}`}
     >
       {children}
     </div>
   );
 }
 
-export function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
+export const Input = forwardRef<
+  HTMLInputElement,
+  InputHTMLAttributes<HTMLInputElement>
+>(({ className = "", ...props }, ref) => {
   return (
     <input
-      className={`w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 ${className}`}
+      ref={ref}
+      className={`w-full rounded-lg border border-[#CBF1F5] bg-white px-3 py-2 text-sm outline-none focus:border-[#71C9CE] focus:ring-2 focus:ring-[#71C9CE]/30 dark:border-[#164549] dark:bg-[#12282c] dark:text-gray-100 ${className}`}
       {...props}
     />
   );
-}
+});
 
-export function Textarea({ className = "", ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+Input.displayName = "Input";
+
+export function Textarea({
+  className = "",
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
-      className={`w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 ${className}`}
+      className={`w-full rounded-lg border border-[#CBF1F5] bg-white px-3 py-2 text-sm outline-none focus:border-[#71C9CE] focus:ring-2 focus:ring-[#71C9CE]/30 dark:border-[#164549] dark:bg-[#12282c] dark:text-gray-100 ${className}`}
       {...props}
     />
   );
@@ -49,27 +74,29 @@ export function Textarea({ className = "", ...props }: TextareaHTMLAttributes<HT
 export function Spinner() {
   return (
     <div className="flex justify-center p-8">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-brand-600" />
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#CBF1F5] border-t-[#71C9CE]" />
     </div>
   );
 }
 
 const statusColors: Record<string, string> = {
-  PENDING: "bg-gray-200 text-gray-800",
-  PROCESSING: "bg-blue-200 text-blue-800",
-  SENT: "bg-green-200 text-green-800",
-  FAILED: "bg-red-200 text-red-800",
-  BOUNCED: "bg-orange-200 text-orange-800",
-  PAUSED: "bg-yellow-200 text-yellow-800",
-  GENERATED: "bg-purple-200 text-purple-800",
-  RETRY_SCHEDULED: "bg-amber-200 text-amber-800",
-  SKIPPED: "bg-gray-200 text-gray-700",
+  PENDING: "bg-[#E3FDFD] text-[#164549] border border-[#A6E3E9] dark:bg-[#122b2f] dark:text-[#A6E3E9]",
+  PROCESSING: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
+  SENT: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+  FAILED: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
+  BOUNCED: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+  PAUSED: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300",
+  GENERATED: "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300",
+  RETRY_SCHEDULED: "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300",
+  SKIPPED: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
 };
 
 export function StatusBadge({ status }: { status: string }) {
-  const color = statusColors[status] ?? "bg-gray-200 text-gray-800";
+  const color = statusColors[status] ?? "bg-[#E3FDFD] text-[#164549]";
   return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${color}`}>
+    <span
+      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${color}`}
+    >
       {status}
     </span>
   );

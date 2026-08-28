@@ -1,13 +1,20 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { AuthService } from "./auth.service.js";
 import { authRepo } from "./auth.repo.js";
-import { loginSchema, refreshSchema } from "./auth.schema.js";
+import { loginSchema, registerSchema, refreshSchema } from "./auth.schema.js";
 import { authGuard } from "../../middleware/auth-guard.js";
 
 export async function authController(app: FastifyInstance) {
   const signAccess = (payload: object) =>
     app.jwt.sign(payload as { sub: number; email: string }, { expiresIn: "15m" });
   const service = new AuthService(authRepo, signAccess);
+
+  // POST /auth/register
+  app.post("/register", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = registerSchema.parse(req.body);
+    const result = await service.register(body.name, body.email, body.password);
+    return reply.code(201).send(result);
+  });
 
   // POST /auth/login
   app.post("/login", async (req: FastifyRequest, reply: FastifyReply) => {

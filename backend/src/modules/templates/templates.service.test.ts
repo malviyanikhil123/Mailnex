@@ -15,6 +15,7 @@ const makeRepo = () =>
 
 describe("TemplatesService (unit, mocked repo)", () => {
   let repo: ReturnType<typeof makeRepo>;
+  const userId = 1;
 
   beforeEach(() => {
     repo = makeRepo();
@@ -30,11 +31,11 @@ describe("TemplatesService (unit, mocked repo)", () => {
       body: "Hello {{name}}",
       category: "general",
     };
-    const expected = { id: 1, ...input, version: 1, active: true };
+    const expected = { id: 1, userId, ...input, version: 1, active: true };
     (repo.create as ReturnType<typeof vi.fn>).mockResolvedValue(expected);
 
-    const result = await service.create(input);
-    expect(repo.create).toHaveBeenCalledWith(input);
+    const result = await service.create(userId, input);
+    expect(repo.create).toHaveBeenCalledWith(userId, input);
     expect(result).toEqual(expected);
   });
 
@@ -42,11 +43,11 @@ describe("TemplatesService (unit, mocked repo)", () => {
     const { TemplatesService } = await import("./templates.service.js");
     const service = new TemplatesService(repo);
 
-    const rows = [{ id: 1, name: "t1" }];
+    const rows = [{ id: 1, userId, name: "t1" }];
     (repo.list as ReturnType<typeof vi.fn>).mockResolvedValue(rows);
 
-    const result = await service.list();
-    expect(repo.list).toHaveBeenCalled();
+    const result = await service.list(userId);
+    expect(repo.list).toHaveBeenCalledWith(userId);
     expect(result).toEqual(rows);
   });
 
@@ -56,20 +57,20 @@ describe("TemplatesService (unit, mocked repo)", () => {
 
     (repo.getById as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
-    await expect(service.get(99)).rejects.toMatchObject({
+    await expect(service.get(userId, 99)).rejects.toMatchObject({
       statusCode: 404,
     });
-    expect(repo.getById).toHaveBeenCalledWith(99);
+    expect(repo.getById).toHaveBeenCalledWith(userId, 99);
   });
 
   it("get returns template when found", async () => {
     const { TemplatesService } = await import("./templates.service.js");
     const service = new TemplatesService(repo);
 
-    const tpl = { id: 1, name: "t1", subject: "Sub", body: "Body" };
+    const tpl = { id: 1, userId, name: "t1", subject: "Sub", body: "Body" };
     (repo.getById as ReturnType<typeof vi.fn>).mockResolvedValue(tpl);
 
-    const result = await service.get(1);
+    const result = await service.get(userId, 1);
     expect(result).toEqual(tpl);
   });
 
@@ -79,7 +80,7 @@ describe("TemplatesService (unit, mocked repo)", () => {
 
     (repo.remove as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
-    await expect(service.remove(99)).rejects.toMatchObject({
+    await expect(service.remove(userId, 99)).rejects.toMatchObject({
       statusCode: 404,
     });
   });
@@ -89,7 +90,7 @@ describe("TemplatesService (unit, mocked repo)", () => {
     const service = new TemplatesService(repo);
 
     (repo.remove as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 1 });
-    await expect(service.remove(1)).resolves.toBeUndefined();
+    await expect(service.remove(userId, 1)).resolves.toBeUndefined();
   });
 
   it("update increments version (version bump)", async () => {
@@ -98,6 +99,7 @@ describe("TemplatesService (unit, mocked repo)", () => {
 
     const existing = {
       id: 5,
+      userId,
       name: "old",
       subject: "Old Sub",
       body: "Old Body",
@@ -113,10 +115,10 @@ describe("TemplatesService (unit, mocked repo)", () => {
       version: 4,
     });
 
-    await service.update(5, { subject: "New Sub" });
+    await service.update(userId, 5, { subject: "New Sub" });
 
-    // repo.update must be called with version incremented to 4
     expect(repo.update).toHaveBeenCalledWith(
+      userId,
       5,
       expect.objectContaining({ version: 4 }),
     );
@@ -128,6 +130,7 @@ describe("TemplatesService (unit, mocked repo)", () => {
 
     const tpl = {
       id: 1,
+      userId,
       name: "greet",
       subject: "Hello {{name}}",
       body: "Welcome to {{company}}!",
@@ -137,7 +140,7 @@ describe("TemplatesService (unit, mocked repo)", () => {
     };
     (repo.getById as ReturnType<typeof vi.fn>).mockResolvedValue(tpl);
 
-    const result = await service.preview(1, { name: "Alice", company: "Acme" });
+    const result = await service.preview(userId, 1, { name: "Alice", company: "Acme" });
     expect(result.subject).toBe("Hello Alice");
     expect(result.body).toBe("Welcome to Acme!");
   });
@@ -148,6 +151,7 @@ describe("TemplatesService (unit, mocked repo)", () => {
 
     const tpl = {
       id: 2,
+      userId,
       name: "greet2",
       subject: "Hello {{name}}",
       body: "Hi there",
@@ -157,28 +161,8 @@ describe("TemplatesService (unit, mocked repo)", () => {
     };
     (repo.getById as ReturnType<typeof vi.fn>).mockResolvedValue(tpl);
 
-    const result = await service.preview(2, {});
+    const result = await service.preview(userId, 2, {});
     expect(result.subject).toBe("Hello {{name}}");
     expect(result.body).toBe("Hi there");
-  });
-
-  it("pickRandomActive delegates to repo.pickRandomActive", async () => {
-    const { TemplatesService } = await import("./templates.service.js");
-    const service = new TemplatesService(repo);
-
-    const tpl = {
-      id: 3,
-      name: "promo",
-      subject: "Special offer",
-      body: "Check this out",
-      category: "promo",
-      version: 1,
-      active: true,
-    };
-    (repo.pickRandomActive as ReturnType<typeof vi.fn>).mockResolvedValue(tpl);
-
-    const result = await service.pickRandomActive();
-    expect(repo.pickRandomActive).toHaveBeenCalled();
-    expect(result).toEqual(tpl);
   });
 });

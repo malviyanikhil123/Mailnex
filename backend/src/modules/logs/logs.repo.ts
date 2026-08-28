@@ -21,9 +21,10 @@ const STATUS_FILTER: Record<string, EmailLog["status"][]> = {
 };
 
 export class LogsRepo {
-  /** Concrete implementation of the send-email job's LogsPort. */
-  async create(log: LogInput): Promise<void> {
+  /** Concrete implementation of the send-email job's LogsPort for a specific user. */
+  async create(userId: number, log: LogInput): Promise<void> {
     await db.insert(emailLogs).values({
+      userId,
       contactId: log.contactId,
       templateId: log.templateId ?? null,
       subject: log.subject,
@@ -40,25 +41,25 @@ export class LogsRepo {
     });
   }
 
-  async list(query: ListLogsQuery): Promise<{ rows: EmailLog[]; total: number }> {
+  async list(userId: number, query: ListLogsQuery): Promise<{ rows: EmailLog[]; total: number }> {
     const page = Math.max(1, query.page ?? 1);
     const limit = Math.min(100, Math.max(1, query.limit ?? 20));
-    const conditions = [];
+    const conditions = [eq(emailLogs.userId, userId)];
 
     if (query.status && STATUS_FILTER[query.status]) {
       const allowed = STATUS_FILTER[query.status];
       conditions.push(
         allowed.length === 1
           ? eq(emailLogs.status, allowed[0])
-          : or(...allowed.map((s) => eq(emailLogs.status, s))),
+          : or(...allowed.map((s) => eq(emailLogs.status, s)))!,
       );
     }
     if (query.search) {
       const like = `%${query.search}%`;
-      conditions.push(or(ilike(emailLogs.subject, like), ilike(emailLogs.errorMessage, like)));
+      conditions.push(or(ilike(emailLogs.subject, like), ilike(emailLogs.errorMessage, like))!);
     }
 
-    const where = conditions.length ? and(...conditions) : undefined;
+    const where = and(...conditions);
 
     const [rows, [{ total }]] = await Promise.all([
       db
@@ -74,24 +75,25 @@ export class LogsRepo {
     return { rows, total };
   }
 
-  /** Joined view for the logs page: log + contact email/company. */
-  async listWithContact(query: ListLogsQuery): Promise<{ rows: unknown[]; total: number }> {
+  /** Joined view for the logs page: log + contact email/company for a specific user. */
+  async listWithContact(userId: number, query: ListLogsQuery): Promise<{ rows: unknown[]; total: number }> {
     const page = Math.max(1, query.page ?? 1);
     const limit = Math.min(100, Math.max(1, query.limit ?? 20));
-    const conditions = [];
+    const conditions = [eq(emailLogs.userId, userId)];
+
     if (query.status && STATUS_FILTER[query.status]) {
       const allowed = STATUS_FILTER[query.status];
       conditions.push(
         allowed.length === 1
           ? eq(emailLogs.status, allowed[0])
-          : or(...allowed.map((s) => eq(emailLogs.status, s))),
+          : or(...allowed.map((s) => eq(emailLogs.status, s)))!,
       );
     }
     if (query.search) {
       const like = `%${query.search}%`;
-      conditions.push(or(ilike(emailLogs.subject, like), ilike(emailLogs.errorMessage, like)));
+      conditions.push(or(ilike(emailLogs.subject, like), ilike(emailLogs.errorMessage, like))!);
     }
-    const where = conditions.length ? and(...conditions) : undefined;
+    const where = and(...conditions);
 
     const [rows, [{ total }]] = await Promise.all([
       db

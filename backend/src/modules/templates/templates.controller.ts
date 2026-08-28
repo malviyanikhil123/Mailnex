@@ -16,18 +16,19 @@ function isUniqueViolation(err: unknown): boolean {
   );
 }
 
+function getUserId(req: FastifyRequest): number {
+  return (req.user as { sub: number }).sub;
+}
+
 export async function templatesController(app: FastifyInstance) {
-  /**
-   * POST /templates
-   * Create a new email template.
-   */
   app.post(
     "/",
     { preHandler: authGuard },
     async (req: FastifyRequest, reply: FastifyReply) => {
+      const userId = getUserId(req);
       const input = createTemplateSchema.parse(req.body);
       try {
-        const template = await templatesService.create(input);
+        const template = await templatesService.create(userId, input);
         return reply.code(201).send(template);
       } catch (err) {
         if (isUniqueViolation(err)) {
@@ -41,45 +42,36 @@ export async function templatesController(app: FastifyInstance) {
     },
   );
 
-  /**
-   * GET /templates
-   * List all email templates.
-   */
   app.get(
     "/",
     { preHandler: authGuard },
-    async (_req: FastifyRequest, reply: FastifyReply) => {
-      const templates = await templatesService.list();
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const userId = getUserId(req);
+      const templates = await templatesService.list(userId);
       return reply.code(200).send(templates);
     },
   );
 
-  /**
-   * GET /templates/:id
-   * Get a single template by id.
-   */
   app.get(
     "/:id",
     { preHandler: authGuard },
     async (req: FastifyRequest, reply: FastifyReply) => {
+      const userId = getUserId(req);
       const { id: idStr } = req.params as { id: string };
       const id = parseInt(idStr, 10);
       if (isNaN(id)) {
         return reply.code(400).send({ error: "Invalid id" });
       }
-      const template = await templatesService.get(id);
+      const template = await templatesService.get(userId, id);
       return reply.code(200).send(template);
     },
   );
 
-  /**
-   * PUT /templates/:id
-   * Update a template (version is automatically incremented).
-   */
   app.put(
     "/:id",
     { preHandler: authGuard },
     async (req: FastifyRequest, reply: FastifyReply) => {
+      const userId = getUserId(req);
       const { id: idStr } = req.params as { id: string };
       const id = parseInt(idStr, 10);
       if (isNaN(id)) {
@@ -87,7 +79,7 @@ export async function templatesController(app: FastifyInstance) {
       }
       const data = updateTemplateSchema.parse(req.body);
       try {
-        const updated = await templatesService.update(id, data);
+        const updated = await templatesService.update(userId, id, data);
         return reply.code(200).send(updated);
       } catch (err) {
         if (isUniqueViolation(err)) {
@@ -101,39 +93,33 @@ export async function templatesController(app: FastifyInstance) {
     },
   );
 
-  /**
-   * DELETE /templates/:id
-   * Remove a template.
-   */
   app.delete(
     "/:id",
     { preHandler: authGuard },
     async (req: FastifyRequest, reply: FastifyReply) => {
+      const userId = getUserId(req);
       const { id: idStr } = req.params as { id: string };
       const id = parseInt(idStr, 10);
       if (isNaN(id)) {
         return reply.code(400).send({ error: "Invalid id" });
       }
-      await templatesService.remove(id);
+      await templatesService.remove(userId, id);
       return reply.code(200).send({ deleted: true });
     },
   );
 
-  /**
-   * POST /templates/:id/preview
-   * Render a template with provided vars and return {subject, body}.
-   */
   app.post(
     "/:id/preview",
     { preHandler: authGuard },
     async (req: FastifyRequest, reply: FastifyReply) => {
+      const userId = getUserId(req);
       const { id: idStr } = req.params as { id: string };
       const id = parseInt(idStr, 10);
       if (isNaN(id)) {
         return reply.code(400).send({ error: "Invalid id" });
       }
       const vars = previewVarsSchema.parse(req.body);
-      const result = await templatesService.preview(id, vars);
+      const result = await templatesService.preview(userId, id, vars);
       return reply.code(200).send(result);
     },
   );

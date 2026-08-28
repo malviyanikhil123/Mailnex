@@ -8,6 +8,7 @@ export interface AuthRepo {
   findByEmail(email: string): Promise<UserRow | null>;
   findById(id: number): Promise<UserRow | null>;
   setRefreshToken(id: number, hash: string | null): Promise<void>;
+  create(data: { name: string; email: string; passwordHash: string }): Promise<UserRow>;
 }
 
 export const authRepo: AuthRepo = {
@@ -23,5 +24,13 @@ export const authRepo: AuthRepo = {
 
   async setRefreshToken(id: number, hash: string | null) {
     await db.update(users).set({ refreshToken: hash }).where(eq(users.id, id));
+  },
+
+  async create(data: { name: string; email: string; passwordHash: string }) {
+    const [row] = await db
+      .insert(users)
+      .values({ name: data.name, email: data.email, passwordHash: data.passwordHash })
+      .returning();
+    return row;
   },
 };

@@ -48,11 +48,13 @@ function makeMockRepo(overrides: Partial<{
   findByEmail: (email: string) => Promise<typeof user | null>;
   findById: (id: number) => Promise<typeof user | null>;
   setRefreshToken: (id: number, hash: string | null) => Promise<void>;
+  create: (data: { name: string; email: string; passwordHash: string }) => Promise<typeof user>;
 }> = {}) {
   return {
     findByEmail: vi.fn(overrides.findByEmail ?? (async (_e: string) => null)),
     findById: vi.fn(overrides.findById ?? (async (_id: number) => null)),
     setRefreshToken: vi.fn(overrides.setRefreshToken ?? (async (_id: number, _h: string | null) => {})),
+    create: vi.fn(overrides.create ?? (async (d) => ({ ...user, ...d }))),
   };
 }
 

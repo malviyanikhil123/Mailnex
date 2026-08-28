@@ -28,6 +28,7 @@ export class ContactsService {
   constructor(private repo: ContactsRepo) {}
 
   async importFromFile(
+    userId: number,
     filePath: string,
     fileName: string,
     jobId: string,
@@ -76,19 +77,11 @@ export class ContactsService {
       }
 
       // Bulk-insert unique valid rows; onConflictDoNothing handles DB-level duplicates.
-      // inserted = rows actually written to DB.
-      // dbDups = valid unique-in-file rows that already existed in DB.
-      const { inserted } = await this.repo.bulkInsert(validRows);
+      const { inserted } = await this.repo.bulkInsert(userId, validRows);
       const dbDups = validRows.length - inserted;
 
-      /**
-       * Duplicate counting semantics:
-       *   withinFileDupCount  — same email appeared more than once in this upload file
-       *   dbDups              — email was unique in this file but already in the database
-       *   duplicateCount      — total duplicates = both combined
-       */
       const duplicateCount = withinFileDupCount + dbDups;
-      const skippedCount = 0; // nothing skipped beyond invalid/duplicate
+      const skippedCount = 0;
 
       const summary: ImportSummaryResult = {
         total: totalRows,
@@ -99,7 +92,7 @@ export class ContactsService {
       };
 
       // Persist import record
-      await this.repo.recordImport({
+      await this.repo.recordImport(userId, {
         fileName,
         total: totalRows,
         imported: inserted,

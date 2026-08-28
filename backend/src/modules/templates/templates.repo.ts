@@ -1,56 +1,76 @@
 import { db } from "../../db/index.js";
 import { emailTemplates } from "../../db/schema/templates.js";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import type { CreateTemplateInput, UpdateTemplateInput } from "./templates.schema.js";
 
 export type Template = typeof emailTemplates.$inferSelect;
 
 export class TemplatesRepo {
-  async create(input: CreateTemplateInput): Promise<Template> {
+  async create(userId: number, input: CreateTemplateInput): Promise<Template> {
     const [row] = await db
       .insert(emailTemplates)
-      .values(input)
+      .values({ ...input, userId })
       .returning();
     return row;
   }
 
-  async update(id: number, data: Partial<UpdateTemplateInput> & { version?: number }): Promise<Template | null> {
+  async update(userId: number, id: number, data: Partial<UpdateTemplateInput> & { version?: number }): Promise<Template | null> {
     const [row] = await db
       .update(emailTemplates)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(emailTemplates.id, id))
+      .where(and(eq(emailTemplates.id, id), eq(emailTemplates.userId, userId)))
       .returning();
     return row ?? null;
   }
 
-  async remove(id: number): Promise<{ id: number } | null> {
+  async remove(userId: number, id: number): Promise<{ id: number } | null> {
     const [row] = await db
       .delete(emailTemplates)
-      .where(eq(emailTemplates.id, id))
+      .where(and(eq(emailTemplates.id, id), eq(emailTemplates.userId, userId)))
       .returning({ id: emailTemplates.id });
     return row ?? null;
   }
 
-  async list(): Promise<Template[]> {
-    return db.select().from(emailTemplates);
+  async list(userId: number): Promise<Template[]> {
+    return db.select().from(emailTemplates).where(eq(emailTemplates.userId, userId));
   }
 
-  async getById(id: number): Promise<Template | null> {
+  async getById(userId: number, id: number): Promise<Template | null> {
     const [row] = await db
       .select()
       .from(emailTemplates)
-      .where(eq(emailTemplates.id, id));
+      .where(and(eq(emailTemplates.id, id), eq(emailTemplates.userId, userId)));
     return row ?? null;
   }
 
-  async pickRandomActive(): Promise<Template | undefined> {
+  async pickRandomActive(userId: number, options?: { isFollowup?: boolean }): Promise<Template | undefined> {
+    const conditions = [eq(emailTemplates.active, true), eq(emailTemplates.userId, userId)];
+
+    if (options?.isFollowup === true) {
+      conditions.push(eq(emailTemplates.category, "followup"));
+    } else {
+      // First-time contacts: NEVER pick followup templates
+      conditions.push(ne(emailTemplates.category, "followup"));
+    }
+
     const [row] = await db
       .select()
       .from(emailTemplates)
-      .where(eq(emailTemplates.active, true))
+      .where(and(...conditions))
       .orderBy(sql`random()`)
       .limit(1);
-    return row;
+
+    if (row) return row;
+
+    // Fallback to any active template for this user
+    const [fallback] = await db
+      .select()
+      .from(emailTemplates)
+      .where(and(eq(emailTemplates.active, true), eq(emailTemplates.userId, userId)))
+      .orderBy(sql`random()`)
+      .limit(1);
+
+    return fallback;
   }
 }
 

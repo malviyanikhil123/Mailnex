@@ -10,19 +10,19 @@ export interface CampaignStatus {
   countsByStatus: Record<string, number>;
 }
 
-/** Builds generate-queue deps from a campaign repo. */
-function genDeps(repo: CampaignRepo): GenerateQueueDeps {
+/** Builds generate-queue deps from a campaign repo for a specific user. */
+export function genDeps(userId: number, repo: CampaignRepo): GenerateQueueDeps {
   return {
     getSettings: async () => {
-      const s = await repo.getSettings();
+      const s = await repo.getSettings(userId);
       return s
         ? { state: s.state, dailyLimit: s.dailyLimit, startHour: s.startHour, endHour: s.endHour }
         : null;
     },
-    getQuota: (d) => repo.getQuota(d),
-    countScheduledForDay: (d) => repo.countScheduledForDay(d),
-    selectableContacts: (limit, now) => repo.selectableContacts(limit, now),
-    enqueue: (rows) => repo.enqueue(rows),
+    getQuota: (d) => repo.getQuota(userId, d),
+    countScheduledForDay: (d) => repo.countScheduledForDay(userId, d),
+    selectableContacts: (limit, now) => repo.selectableContacts(userId, limit, now),
+    enqueue: (rows) => repo.enqueue(userId, rows),
   };
 }
 
@@ -30,41 +30,41 @@ export class CampaignService {
   constructor(private repo: CampaignRepo = campaignRepo) {}
 
   /** Start: mark RUNNING and build today's queue immediately. */
-  async start(now: Date = new Date()): Promise<CampaignStatus> {
-    await this.repo.setState("RUNNING");
-    await generateDailyQueue(genDeps(this.repo), now);
-    return this.status(now);
+  async start(userId: number, now: Date = new Date()): Promise<CampaignStatus> {
+    await this.repo.setState(userId, "RUNNING");
+    await generateDailyQueue(genDeps(userId, this.repo), now);
+    return this.status(userId, now);
   }
 
-  async pause(now: Date = new Date()): Promise<CampaignStatus> {
-    await this.repo.setState("PAUSED");
-    return this.status(now);
+  async pause(userId: number, now: Date = new Date()): Promise<CampaignStatus> {
+    await this.repo.setState(userId, "PAUSED");
+    return this.status(userId, now);
   }
 
-  async resume(now: Date = new Date()): Promise<CampaignStatus> {
-    await this.repo.setState("RUNNING");
-    await generateDailyQueue(genDeps(this.repo), now);
-    return this.status(now);
+  async resume(userId: number, now: Date = new Date()): Promise<CampaignStatus> {
+    await this.repo.setState(userId, "RUNNING");
+    await generateDailyQueue(genDeps(userId, this.repo), now);
+    return this.status(userId, now);
   }
 
   /** Stop: mark STOPPED and cancel all not-yet-sent queue rows. */
-  async stop(now: Date = new Date()): Promise<CampaignStatus> {
-    await this.repo.setState("STOPPED");
-    await this.repo.clearScheduledQueue();
-    return this.status(now);
+  async stop(userId: number, now: Date = new Date()): Promise<CampaignStatus> {
+    await this.repo.setState(userId, "STOPPED");
+    await this.repo.clearScheduledQueue(userId);
+    return this.status(userId, now);
   }
 
-  async setMode(mode: string, now: Date = new Date()): Promise<CampaignStatus> {
-    await this.repo.setMode(mode as Parameters<CampaignRepo["setMode"]>[0]);
-    return this.status(now);
+  async setMode(userId: number, mode: string, now: Date = new Date()): Promise<CampaignStatus> {
+    await this.repo.setMode(userId, mode as Parameters<CampaignRepo["setMode"]>[1]);
+    return this.status(userId, now);
   }
 
-  async status(now: Date = new Date()): Promise<CampaignStatus> {
-    const settings = await this.repo.getSettings();
+  async status(userId: number, now: Date = new Date()): Promise<CampaignStatus> {
+    const settings = await this.repo.getSettings(userId);
     const [quotaToday, nextScheduledAt, countsByStatus] = await Promise.all([
-      this.repo.getQuota(now),
-      this.repo.nextScheduledAt(),
-      this.repo.countByStatus(),
+      this.repo.getQuota(userId, now),
+      this.repo.nextScheduledAt(userId),
+      this.repo.countByStatus(userId),
     ]);
     return {
       state: settings?.state ?? "IDLE",

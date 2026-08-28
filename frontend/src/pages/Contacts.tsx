@@ -26,6 +26,11 @@ export default function Contacts() {
     onSuccess: () => {
       toast.success("Contact deleted");
       qc.invalidateQueries({ queryKey: ["contacts"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["analytics"] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || "Failed to delete contact");
     },
   });
 
@@ -75,9 +80,12 @@ export default function Contacts() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Contacts</h1>
-        <div className="flex gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Contacts</h1>
+          <p className="text-sm text-gray-500">Manage companies and recipients for your cold outreach campaigns.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
           <input
             ref={fileRef}
             type="file"
@@ -85,36 +93,40 @@ export default function Contacts() {
             className="hidden"
             onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
           />
-          <Button variant="secondary" onClick={() => fileRef.current?.click()}>
+          <Button variant="secondary" className="text-xs sm:text-sm" onClick={() => fileRef.current?.click()}>
             Import Excel
           </Button>
-          <Button variant="secondary" onClick={exportCsv}>
+          <Button variant="secondary" className="text-xs sm:text-sm" onClick={exportCsv}>
             Export CSV
           </Button>
         </div>
       </div>
 
       {progress && (
-        <div className="rounded-lg bg-brand-50 px-4 py-2 text-sm text-brand-700">{progress}</div>
+        <div className="rounded-lg bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+          {progress}
+        </div>
       )}
 
       <Card>
-        <div className="mb-4 flex gap-2">
-          <Input
-            placeholder="Search company or email…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-          />
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row">
+          <div className="flex-1">
+            <Input
+              placeholder="Search company or email…"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
           <select
             value={status}
             onChange={(e) => {
               setStatus(e.target.value);
               setPage(1);
             }}
-            className="rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-800"
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
           >
             <option value="">All statuses</option>
             {STATUSES.map((s) => (
@@ -131,56 +143,59 @@ export default function Contacts() {
           <ErrorState message="Failed to load contacts." />
         ) : (
           <>
-            <table className="w-full text-sm">
-              <thead className="text-left text-gray-500">
-                <tr>
-                  <th className="py-2">Company</th>
-                  <th>Location</th>
-                  <th>Email</th>
-                  <th>Status</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {data!.rows.map((c) => (
-                  <tr key={c.id} className="border-t border-gray-100 dark:border-gray-800">
-                    <td className="py-2">{c.companyName}</td>
-                    <td>{c.location ?? "—"}</td>
-                    <td>{c.email}</td>
-                    <td>
-                      <StatusBadge status={c.status} />
-                    </td>
-                    <td className="text-right">
-                      <button
-                        onClick={() => confirm("Delete this contact?") && del.mutate(c.id)}
-                        className="text-xs text-red-600 hover:underline"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {data!.rows.length === 0 && (
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
+              <table className="w-full text-sm min-w-[550px]">
+                <thead className="text-left text-gray-500 text-xs uppercase bg-gray-50 dark:bg-gray-800/50">
                   <tr>
-                    <td colSpan={5} className="py-6 text-center text-gray-500">
-                      No contacts found.
-                    </td>
+                    <th className="py-2.5 px-3">Company</th>
+                    <th className="py-2.5 px-3">Location</th>
+                    <th className="py-2.5 px-3">Email</th>
+                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3 text-right">Action</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data!.rows.map((c) => (
+                    <tr key={c.id} className="border-t border-gray-100 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/30">
+                      <td className="py-2.5 px-3 font-medium text-gray-900 dark:text-gray-100">{c.companyName}</td>
+                      <td className="py-2.5 px-3 text-gray-600 dark:text-gray-400">{c.location ?? "—"}</td>
+                      <td className="py-2.5 px-3 text-gray-600 dark:text-gray-400 font-mono text-xs">{c.email}</td>
+                      <td className="py-2.5 px-3">
+                        <StatusBadge status={c.status} />
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <button
+                          onClick={() => confirm("Delete this contact?") && del.mutate(c.id)}
+                          className="text-xs font-medium text-red-600 hover:underline dark:text-red-400"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {data!.rows.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-gray-500">
+                        No contacts found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-            <div className="mt-4 flex items-center justify-between text-sm">
-              <span className="text-gray-500">{data!.total} total</span>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm border-t border-gray-100 pt-3 dark:border-gray-800">
+              <span className="text-gray-500 text-xs sm:text-sm">{data!.total} total contacts</span>
               <div className="flex items-center gap-2">
-                <Button variant="secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                <Button variant="secondary" className="text-xs py-1 px-2.5" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
                   Prev
                 </Button>
-                <span>
+                <span className="text-xs sm:text-sm font-medium px-2">
                   {page} / {totalPages}
                 </span>
                 <Button
                   variant="secondary"
+                  className="text-xs py-1 px-2.5"
                   disabled={page >= totalPages}
                   onClick={() => setPage((p) => p + 1)}
                 >

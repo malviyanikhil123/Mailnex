@@ -1,8 +1,10 @@
 import { pgTable, serial, integer, text, boolean, timestamp } from "drizzle-orm/pg-core";
+import { users } from "./users.js";
 import { contacts } from "./contacts.js";
 import { campaignMode, campaignState, queueStatus } from "./enums.js";
 export const campaignSettings = pgTable("campaign_settings", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }).unique(),
   mode: campaignMode("mode").notNull().default("DRAFT"),
   state: campaignState("state").notNull().default("IDLE"),
   dailyLimit: integer("daily_limit").notNull().default(50),
@@ -14,7 +16,8 @@ export const campaignSettings = pgTable("campaign_settings", {
 });
 export const campaignQueue = pgTable("campaign_queue", {
   id: serial("id").primaryKey(),
-  contactId: integer("contact_id").notNull().references(() => contacts.id),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  contactId: integer("contact_id").notNull().references(() => contacts.id, { onDelete: "cascade" }),
   scheduledAt: timestamp("scheduled_at").notNull(),
   status: queueStatus("status").notNull().default("SCHEDULED"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

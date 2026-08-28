@@ -3,7 +3,7 @@ import { contacts } from "../../db/schema/contacts.js";
 import { emailLogs } from "../../db/schema/logs.js";
 import { contactsImports } from "../../db/schema/imports.js";
 import { dailyQuota } from "../../db/schema/quota.js";
-import { sql } from "drizzle-orm";
+import { sql, eq, and } from "drizzle-orm";
 
 export interface ContactCounts {
   total: number;
@@ -16,7 +16,7 @@ export interface ContactCounts {
 }
 
 export interface LogCounts {
-  generated: number; // every email_logs row = one generated content
+  generated: number;
   sent: number;
   bounced: number;
   failed: number;
@@ -30,7 +30,7 @@ export interface TrendPoint {
 }
 
 export class AnalyticsRepo {
-  async contactCounts(): Promise<ContactCounts> {
+  async contactCounts(userId: number): Promise<ContactCounts> {
     const [row] = await db
       .select({
         total: sql<number>`count(*)::int`,
@@ -41,11 +41,12 @@ export class AnalyticsRepo {
         bounced: sql<number>`count(*) filter (where ${contacts.status} = 'BOUNCED')::int`,
         paused: sql<number>`count(*) filter (where ${contacts.status} = 'PAUSED')::int`,
       })
-      .from(contacts);
+      .from(contacts)
+      .where(eq(contacts.userId, userId));
     return row;
   }
 
-  async logCounts(): Promise<LogCounts> {
+  async logCounts(userId: number): Promise<LogCounts> {
     const [row] = await db
       .select({
         generated: sql<number>`count(*)::int`,
@@ -54,33 +55,36 @@ export class AnalyticsRepo {
         failed: sql<number>`count(*) filter (where ${emailLogs.status} = 'FAILED')::int`,
         aiUsed: sql<number>`count(*) filter (where ${emailLogs.aiUsed} = true)::int`,
       })
-      .from(emailLogs);
+      .from(emailLogs)
+      .where(eq(emailLogs.userId, userId));
     return row;
   }
 
-  async emailsSentToday(dateKey: string): Promise<number> {
+  async emailsSentToday(userId: number, dateKey: string): Promise<number> {
     const [row] = await db
       .select({ emailsSent: dailyQuota.emailsSent })
       .from(dailyQuota)
-      .where(sql`${dailyQuota.date} = ${dateKey}`);
+      .where(and(eq(dailyQuota.userId, userId), sql`${dailyQuota.date} = ${dateKey}`));
     return row?.emailsSent ?? 0;
   }
 
-  async totalImportedContacts(): Promise<number> {
+  async totalImportedContacts(userId: number): Promise<number> {
     const [row] = await db
       .select({ total: sql<number>`coalesce(sum(${contactsImports.importedRows}), 0)::int` })
-      .from(contactsImports);
+      .from(contactsImports)
+      .where(eq(contactsImports.userId, userId));
     return row?.total ?? 0;
   }
 
-  async averageEmailsPerDay(): Promise<number> {
+  async averageEmailsPerDay(userId: number): Promise<number> {
     const [row] = await db
       .select({ avg: sql<number>`coalesce(avg(${dailyQuota.emailsSent}), 0)::float` })
-      .from(dailyQuota);
+      .from(dailyQuota)
+      .where(eq(dailyQuota.userId, userId));
     return Math.round((row?.avg ?? 0) * 100) / 100;
   }
 
-  async dailyTrends(days: number): Promise<TrendPoint[]> {
+  async dailyTrends(userId: number, days: number): Promise<TrendPoint[]> {
     return db
       .select({
         bucket: sql<string>`to_char(date_trunc('day', ${emailLogs.createdAt}), 'YYYY-MM-DD')`,
@@ -88,12 +92,17 @@ export class AnalyticsRepo {
         failed: sql<number>`count(*) filter (where ${emailLogs.status} in ('FAILED','BOUNCED'))::int`,
       })
       .from(emailLogs)
-      .where(sql`${emailLogs.createdAt} >= now() - (${days} || ' days')::interval`)
+      .where(
+        and(
+          eq(emailLogs.userId, userId),
+          sql`${emailLogs.createdAt} >= now() - (${days} || ' days')::interval`,
+        ),
+      )
       .groupBy(sql`date_trunc('day', ${emailLogs.createdAt})`)
       .orderBy(sql`date_trunc('day', ${emailLogs.createdAt})`);
   }
 
-  async monthlyTrends(months: number): Promise<TrendPoint[]> {
+  async monthlyTrends(userId: number, months: number): Promise<TrendPoint[]> {
     return db
       .select({
         bucket: sql<string>`to_char(date_trunc('month', ${emailLogs.createdAt}), 'YYYY-MM')`,
@@ -101,15 +110,21 @@ export class AnalyticsRepo {
         failed: sql<number>`count(*) filter (where ${emailLogs.status} in ('FAILED','BOUNCED'))::int`,
       })
       .from(emailLogs)
-      .where(sql`${emailLogs.createdAt} >= now() - (${months} || ' months')::interval`)
+      .where(
+        and(
+          eq(emailLogs.userId, userId),
+          sql`${emailLogs.createdAt} >= now() - (${months} || ' months')::interval`,
+        ),
+      )
       .groupBy(sql`date_trunc('month', ${emailLogs.createdAt})`)
       .orderBy(sql`date_trunc('month', ${emailLogs.createdAt})`);
   }
 
-  async importHistory(limit: number): Promise<(typeof contactsImports.$inferSelect)[]> {
+  async importHistory(userId: number, limit: number): Promise<(typeof contactsImports.$inferSelect)[]> {
     return db
       .select()
       .from(contactsImports)
+      .where(eq(contactsImports.userId, userId))
       .orderBy(sql`${contactsImports.createdAt} desc`)
       .limit(limit);
   }

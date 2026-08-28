@@ -8,13 +8,21 @@ import { useAuth } from "../store/auth";
 import { toast } from "../store/toast";
 import { Button, Card, Input } from "../components/ui/primitives";
 
-const schema = z.object({
-  email: z.string().email("Enter a valid email"),
-  password: z.string().min(1, "Password is required"),
-});
+const schema = z
+  .object({
+    name: z.string().min(1, "Name is required"),
+    email: z.string().email("Enter a valid email"),
+    password: z.string().min(6, "Password must be at least 6 characters"),
+    confirmPassword: z.string().min(1, "Please confirm your password"),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ["confirmPassword"],
+  });
+
 type FormValues = z.infer<typeof schema>;
 
-export default function Login() {
+export default function Register() {
   const navigate = useNavigate();
   const setAuth = useAuth((s) => s.setAuth);
   const {
@@ -24,12 +32,16 @@ export default function Login() {
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
 
   const mutation = useMutation({
-    mutationFn: ({ email, password }: FormValues) => authApi.login(email, password),
+    mutationFn: ({ name, email, password }: FormValues) =>
+      authApi.register(name, email, password),
     onSuccess: (data) => {
       setAuth(data);
+      toast.success("Account created successfully!");
       navigate("/");
     },
-    onError: () => toast.error("Invalid credentials"),
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || "Registration failed");
+    },
   });
 
   return (
@@ -43,9 +55,14 @@ export default function Login() {
             Mailnex
           </span>
         </div>
-        <h1 className="mb-1 text-xl font-bold text-gray-900 dark:text-gray-100">Sign in</h1>
+        <h1 className="mb-1 text-xl font-bold text-gray-900 dark:text-gray-100">Create an account</h1>
         <p className="mb-5 text-sm text-gray-500">Automated Outreach & Cold Emailing Platform</p>
         <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium">Full Name</label>
+            <Input type="text" placeholder="John Doe" {...register("name")} />
+            {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name.message}</p>}
+          </div>
           <div>
             <label className="mb-1 block text-sm font-medium">Email</label>
             <Input type="email" placeholder="john@example.com" {...register("email")} />
@@ -58,13 +75,20 @@ export default function Login() {
               <p className="mt-1 text-xs text-red-600">{errors.password.message}</p>
             )}
           </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">Confirm Password</label>
+            <Input type="password" placeholder="••••••••" {...register("confirmPassword")} />
+            {errors.confirmPassword && (
+              <p className="mt-1 text-xs text-red-600">{errors.confirmPassword.message}</p>
+            )}
+          </div>
           <Button type="submit" className="w-full" disabled={mutation.isPending}>
-            {mutation.isPending ? "Signing in…" : "Sign in"}
+            {mutation.isPending ? "Creating account…" : "Create Account"}
           </Button>
           <div className="text-center text-sm text-gray-500">
-            Don't have an account?{" "}
-            <Link to="/register" className="font-semibold text-[#36888e] hover:underline dark:text-[#71C9CE]">
-              Sign up
+            Already have an account?{" "}
+            <Link to="/login" className="font-semibold text-[#36888e] hover:underline dark:text-[#71C9CE]">
+              Sign in
             </Link>
           </div>
         </form>
