@@ -1,7 +1,7 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { useAuth } from "../store/auth";
 
-const baseURL = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+const baseURL = window.__MAILNEX_CONFIG__.API_URL ?? "http://localhost:4000";
 
 export const apiClient = axios.create({ baseURL });
 
