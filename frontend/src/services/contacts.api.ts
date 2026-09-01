@@ -12,7 +12,17 @@ export interface ImportProgress {
   processed: number;
   total: number;
   done: boolean;
-  summary?: Omit<ImportSummary, "id" | "createdAt" | "fileName">;
+  summary?: {
+    total: number;
+    imported: number;
+    skipped: number;
+    duplicate: number;
+    invalid: number;
+    importedRows?: number;
+    duplicateRows?: number;
+    invalidRows?: number;
+    totalRows?: number;
+  };
 }
 
 export const contactsApi = {

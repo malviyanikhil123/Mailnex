@@ -19,6 +19,7 @@ export default function Contacts() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["contacts", search, status, page],
     queryFn: () => contactsApi.list({ search, status: status || undefined, page, limit }),
+    refetchInterval: 4000,
   });
 
   const del = useMutation({
@@ -38,12 +39,26 @@ export default function Contacts() {
     const timer = setInterval(async () => {
       try {
         const p = await contactsApi.progress(jobId);
-        setProgress(`Imported ${p.processed}/${p.total}`);
+        setProgress(`Processing ${p.processed}/${p.total}…`);
         if (p.done) {
           clearInterval(timer);
           setProgress(null);
-          toast.success("Import complete");
+          if (p.summary) {
+            if (p.summary.imported > 0) {
+              toast.success(
+                `Imported ${p.summary.imported} contact${p.summary.imported > 1 ? "s" : ""}! (${p.summary.duplicate} duplicates, ${p.summary.invalid} invalid)`,
+              );
+            } else {
+              toast.error(
+                `0 contacts imported (${p.summary.invalid} invalid rows, ${p.summary.duplicate} duplicates)`,
+              );
+            }
+          } else {
+            toast.success("Import complete");
+          }
           qc.invalidateQueries({ queryKey: ["contacts"] });
+          qc.invalidateQueries({ queryKey: ["dashboard"] });
+          qc.invalidateQueries({ queryKey: ["analytics"] });
         }
       } catch {
         clearInterval(timer);
@@ -59,6 +74,8 @@ export default function Contacts() {
       pollProgress(jobId);
     } catch {
       toast.error("Import failed to start");
+    } finally {
+      if (fileRef.current) fileRef.current.value = "";
     }
   };
 
@@ -89,7 +106,7 @@ export default function Contacts() {
           <input
             ref={fileRef}
             type="file"
-            accept=".xlsx,.xls"
+            accept=".xlsx,.xls,.csv"
             className="hidden"
             onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
           />

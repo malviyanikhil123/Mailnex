@@ -20,6 +20,7 @@ export default function Logs() {
     queryKey: ["logs", tab, search, page],
     queryFn: () =>
       logsApi.list({ status: tab === "all" ? undefined : tab, search: search || undefined, page, limit }),
+    refetchInterval: 4000,
   });
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / limit)) : 1;
