@@ -2,7 +2,7 @@ import { db } from "../../db/index.js";
 import { emailTemplates } from "../../db/schema/templates.js";
 import { resumes } from "../../db/schema/resumes.js";
 import { emailLogs } from "../../db/schema/logs.js";
-import { and, eq, ne, sql, desc } from "drizzle-orm";
+import { and, eq, ne, sql, desc, asc } from "drizzle-orm";
 import type { CreateTemplateInput, UpdateTemplateInput } from "./templates.schema.js";
 
 export type Template = typeof emailTemplates.$inferSelect;

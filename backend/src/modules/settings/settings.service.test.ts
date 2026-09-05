@@ -39,6 +39,18 @@ function makeFakeRepo(): ISettingsRepo & { app: Partial<AppSettings>; campaign: 
       Object.assign(state.campaign, patch);
       return state.campaign as CampaignSettings;
     },
+    async listResumes(_userId: number) {
+      return [];
+    },
+    async getResume(_userId: number, _resumeId: number) {
+      return null;
+    },
+    async addResume(_userId: number, name: string, fileName: string, filePath: string) {
+      return { id: 1, userId: _userId, name, fileName, filePath, createdAt: new Date() };
+    },
+    async deleteResume(_userId: number, _resumeId: number) {
+      return null;
+    },
   };
 }
 
