@@ -47,7 +47,11 @@ function buildSendDeps(userId: number): SendEmailDeps {
       getGeminiKey: () => settingsService.getGeminiKey(userId),
       getCandidateProfile: () => settingsService.getCandidateProfile(userId),
       buildSignature: (p) => settingsService.buildSignature(p),
-      getResumePath: () => settingsService.getResumePath(userId),
+      getResumeAttachment: (resumeId) => settingsService.getResumeAttachment(userId, resumeId),
+      getResumePath: async (resumeId) => {
+        const att = await settingsService.getResumeAttachment(userId, resumeId);
+        return att?.path ?? null;
+      },
     },
     personalize,
     getProvider: () => buildProviderForUser(userId),
@@ -85,6 +89,9 @@ function buildTickDeps(userId: number): CampaignTickDeps {
   };
 }
 
+// Tracks userIds currently executing a tick to prevent overlapping/simultaneous sends.
+const userRunningTicks = new Set<number>();
+
 /** Starts the per-minute multi-user campaign ticks and the midnight auto-resume job. */
 export function startScheduler(): void {
   // Every minute: process at most one due email per active running user.
@@ -93,10 +100,20 @@ export function startScheduler(): void {
       try {
         const runningCampaigns = await campaignRepo.getAllRunningSettings();
         for (const camp of runningCampaigns) {
-          const userDeps = buildTickDeps(camp.userId);
-          await campaignTick(userDeps, new Date()).catch((err) => {
-            logger.error({ err, userId: camp.userId }, "user campaign tick failed");
-          });
+          const userId = camp.userId;
+          if (userRunningTicks.has(userId)) {
+            logger.debug({ userId }, "campaign tick already in progress — skipping overlapping tick");
+            continue;
+          }
+          userRunningTicks.add(userId);
+          const userDeps = buildTickDeps(userId);
+          campaignTick(userDeps, new Date())
+            .catch((err) => {
+              logger.error({ err, userId }, "user campaign tick failed");
+            })
+            .finally(() => {
+              userRunningTicks.delete(userId);
+            });
         }
       } catch (err) {
         logger.error({ err }, "scheduler tick loop failed");

@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import type { CandidateProfile, PublicSettings } from "../types/api";
+import type { CandidateProfile, PublicSettings, Resume } from "../types/api";
 
 export const settingsApi = {
   get: () => apiClient.get<PublicSettings>("/settings").then((r) => r.data),
@@ -16,4 +16,14 @@ export const settingsApi = {
     form.append("file", file);
     return apiClient.post<{ resumeFileName: string }>("/settings/resume", form).then((r) => r.data);
   },
+  listResumes: () =>
+    apiClient.get<{ resumes: Resume[] }>("/settings/resumes").then((r) => r.data.resumes),
+  uploadResumeFile: (file: File, name?: string) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (name) form.append("name", name);
+    return apiClient.post<Resume>("/settings/resumes", form).then((r) => r.data);
+  },
+  deleteResume: (id: number) =>
+    apiClient.delete<{ deleted: boolean }>(`/settings/resumes/${id}`).then((r) => r.data),
 };

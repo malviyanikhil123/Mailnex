@@ -7,6 +7,7 @@ export interface TemplateInput {
   body: string;
   category?: string;
   active?: boolean;
+  resumeId?: number | null;
 }
 
 export const templatesApi = {

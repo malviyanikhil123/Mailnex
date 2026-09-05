@@ -6,6 +6,7 @@ export const createTemplateSchema = z.object({
   body: z.string().min(1),
   category: z.string().optional(),
   active: z.boolean().optional(),
+  resumeId: z.number().int().optional().nullable(),
 });
 
 export const updateTemplateSchema = z.object({
@@ -14,6 +15,7 @@ export const updateTemplateSchema = z.object({
   body: z.string().min(1).optional(),
   category: z.string().optional(),
   active: z.boolean().optional(),
+  resumeId: z.number().int().optional().nullable(),
 });
 
 export const previewVarsSchema = z.record(z.string(), z.string()).optional().default({});

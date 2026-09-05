@@ -64,13 +64,33 @@ const personalizationSchema = z.object({
   body: z.string().trim().min(1),
 });
 
-// ---------------------------------------------------------------------------
-// Default model factory (production)
-// ---------------------------------------------------------------------------
+const CANDIDATE_MODELS = [
+  "gemini-3.5-flash-lite",
+  "gemini-3.6-flash",
+  "gemini-flash-latest",
+];
 
 function defaultModelFactory(apiKey: string): GenerativeModelLike {
   const client = new GoogleGenerativeAI(apiKey);
-  return client.getGenerativeModel({ model: "gemini-1.5-flash" });
+  return {
+    async generateContent(prompt: string) {
+      let lastError: unknown;
+      for (const modelName of CANDIDATE_MODELS) {
+        try {
+          const model = client.getGenerativeModel({ model: modelName });
+          const res = await model.generateContent(prompt);
+          return res;
+        } catch (err: any) {
+          lastError = err;
+          logger.warn(
+            { model: modelName, error: err?.message || String(err) },
+            "Gemini model failed, attempting next fallback model",
+          );
+        }
+      }
+      throw lastError;
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -21,6 +21,15 @@ export async function buildApp() {
   await app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
   await app.register(jwt, { secret: env.JWT_SECRET });
   await app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 } });
+  app.addContentTypeParser("application/json", { parseAs: "string" }, (_req, body, done) => {
+    try {
+      const json = typeof body === "string" && body.trim() !== "" ? JSON.parse(body) : {};
+      done(null, json);
+    } catch (err: any) {
+      err.statusCode = 400;
+      done(err, undefined);
+    }
+  });
   registerErrorHandler(app);
   app.get("/health", async () => ({ status: "ok" }));
   await app.register(authRoutes, { prefix: "/auth" });

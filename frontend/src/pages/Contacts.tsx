@@ -110,7 +110,7 @@ export default function Contacts() {
             className="hidden"
             onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
           />
-          <Button variant="secondary" className="text-xs sm:text-sm" onClick={() => fileRef.current?.click()}>
+          <Button variant="primary" className="text-xs sm:text-sm" onClick={() => fileRef.current?.click()}>
             Import Excel
           </Button>
           <Button variant="secondary" className="text-xs sm:text-sm" onClick={exportCsv}>
@@ -120,7 +120,7 @@ export default function Contacts() {
       </div>
 
       {progress && (
-        <div className="rounded-lg bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+        <div className="rounded-lg bg-[#F1F5F9] border border-[#BAE6FD] px-4 py-2.5 text-sm font-medium text-[#0F172A] dark:bg-blue-950/60 dark:text-blue-300 dark:border-transparent">
           {progress}
         </div>
       )}
@@ -143,7 +143,7 @@ export default function Contacts() {
               setStatus(e.target.value);
               setPage(1);
             }}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
+            className="rounded-lg border border-[#BAE6FD] bg-[#F1F5F9] px-3 py-2 text-sm text-gray-900 outline-none focus:border-[#60A5FA] focus:ring-2 focus:ring-[#60A5FA]/30 dark:border-[#164549] dark:bg-[#12282c] dark:text-gray-100"
           >
             <option value="">All statuses</option>
             {STATUSES.map((s) => (
@@ -162,7 +162,7 @@ export default function Contacts() {
           <>
             <div className="overflow-x-auto -mx-4 sm:mx-0">
               <table className="w-full text-sm min-w-[550px]">
-                <thead className="text-left text-gray-500 text-xs uppercase bg-gray-50 dark:bg-gray-800/50">
+                <thead className="text-left text-gray-700 text-xs uppercase bg-[#BAE6FD] dark:bg-gray-800/50">
                   <tr>
                     <th className="py-2.5 px-3">Company</th>
                     <th className="py-2.5 px-3">Location</th>
@@ -173,7 +173,7 @@ export default function Contacts() {
                 </thead>
                 <tbody>
                   {data!.rows.map((c) => (
-                    <tr key={c.id} className="border-t border-gray-100 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/30">
+                    <tr key={c.id} className="border-t border-[#BAE6FD]/60 dark:border-gray-800 hover:bg-[#E0F2FE] dark:hover:bg-gray-800/30">
                       <td className="py-2.5 px-3 font-medium text-gray-900 dark:text-gray-100">{c.companyName}</td>
                       <td className="py-2.5 px-3 text-gray-600 dark:text-gray-400">{c.location ?? "—"}</td>
                       <td className="py-2.5 px-3 text-gray-600 dark:text-gray-400 font-mono text-xs">{c.email}</td>
@@ -201,7 +201,7 @@ export default function Contacts() {
               </table>
             </div>
 
-            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm border-t border-gray-100 pt-3 dark:border-gray-800">
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm border-t border-[#BAE6FD]/60 pt-3 dark:border-gray-800">
               <span className="text-gray-500 text-xs sm:text-sm">{data!.total} total contacts</span>
               <div className="flex items-center gap-2">
                 <Button variant="secondary" className="text-xs py-1 px-2.5" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>

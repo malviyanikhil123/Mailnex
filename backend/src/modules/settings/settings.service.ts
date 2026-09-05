@@ -118,7 +118,39 @@ export class SettingsService {
     if (emailProvider !== undefined) {
       await this.repo.patchApp(userId, { emailProvider });
     }
+    if (campaignPatch.testEmail === "") {
+      (campaignPatch as any).testEmail = null;
+    }
     return this.repo.patchCampaign(userId, campaignPatch as Partial<CampaignSettings>);
+  }
+
+  async listResumes(userId: number) {
+    return this.repo.listResumes(userId);
+  }
+
+  async getResumeAttachment(
+    userId: number,
+    resumeId?: number | null,
+  ): Promise<{ filename: string; path: string } | null> {
+    if (resumeId) {
+      const resume = await this.repo.getResume(userId, resumeId);
+      if (resume) {
+        return { filename: resume.fileName, path: resume.filePath };
+      }
+    }
+    const app = await this.repo.getApp(userId);
+    if (app?.resumePath) {
+      return { filename: path.basename(app.resumePath), path: app.resumePath };
+    }
+    return null;
+  }
+
+  async addResume(userId: number, name: string, fileName: string, filePath: string) {
+    return this.repo.addResume(userId, name, fileName, filePath);
+  }
+
+  async deleteResume(userId: number, resumeId: number) {
+    return this.repo.deleteResume(userId, resumeId);
   }
 
   // ---- public view -----------------------------------------------------------

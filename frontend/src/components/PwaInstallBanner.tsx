@@ -35,10 +35,10 @@ export function PwaInstallBanner() {
   if (!deferredPrompt || dismissed) return null;
 
   return (
-    <div className="mx-3 mb-3 rounded-xl border border-[#A6E3E9] bg-gradient-to-r from-[#E3FDFD] to-[#CBF1F5] p-3 shadow-xs dark:border-[#164549] dark:from-[#0e2124] dark:to-[#14363b]">
+    <div className="mx-3 mb-3 rounded-xl border border-[#BAE6FD] bg-[#F1F5F9] p-3 shadow-xs dark:border-[#164549] dark:from-[#0e2124] dark:to-[#14363b]">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-tr from-[#71C9CE] to-[#36888e] text-white font-bold text-xs shrink-0">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#60A5FA] dark:from-[#71C9CE] dark:to-[#36888e] text-white font-bold text-xs shrink-0 shadow-xs">
             M
           </div>
           <div>
@@ -56,7 +56,7 @@ export function PwaInstallBanner() {
       </div>
       <button
         onClick={install}
-        className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#71C9CE] hover:bg-[#51b2b8] py-1.5 text-xs font-bold text-gray-950 shadow-xs transition"
+        className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#60A5FA] hover:bg-[#3B82F6] dark:bg-[#71C9CE] dark:hover:bg-[#51b2b8] py-1.5 text-xs font-bold text-white dark:text-gray-950 shadow-xs transition"
       >
         <Download size={14} /> Install App
       </button>

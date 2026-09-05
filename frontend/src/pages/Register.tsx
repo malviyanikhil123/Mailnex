@@ -45,38 +45,38 @@ export default function Register() {
   });
 
   return (
-    <div className="flex h-full items-center justify-center bg-[#f4fcfc] p-4 dark:bg-[#091517]">
+    <div className="flex h-full min-h-screen items-center justify-center bg-[#E0F2FE] p-4 dark:bg-[#091517]">
       <Card className="w-full max-w-sm">
         <div className="mb-4 flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-tr from-[#71C9CE] to-[#36888e] text-white font-black text-sm shadow-xs">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#60A5FA] text-white font-black text-sm shadow-xs dark:from-[#71C9CE] dark:to-[#36888e]">
             M
           </div>
-          <span className="text-xl font-bold bg-gradient-to-r from-[#71C9CE] to-[#24666b] dark:from-[#A6E3E9] dark:to-[#71C9CE] bg-clip-text text-transparent">
+          <span className="text-xl font-bold text-[#0F172A] dark:from-[#A6E3E9] dark:to-[#71C9CE] dark:bg-clip-text dark:text-transparent">
             Mailnex
           </span>
         </div>
         <h1 className="mb-1 text-xl font-bold text-gray-900 dark:text-gray-100">Create an account</h1>
-        <p className="mb-5 text-sm text-gray-500">Automated Outreach & Cold Emailing Platform</p>
+        <p className="mb-5 text-sm text-gray-600 dark:text-gray-400">Automated Outreach & Cold Emailing Platform</p>
         <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium">Full Name</label>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</label>
             <Input type="text" placeholder="John Doe" {...register("name")} />
             {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name.message}</p>}
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Email</label>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
             <Input type="email" placeholder="john@example.com" {...register("email")} />
             {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>}
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Password</label>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
             <Input type="password" placeholder="••••••••" {...register("password")} />
             {errors.password && (
               <p className="mt-1 text-xs text-red-600">{errors.password.message}</p>
             )}
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Confirm Password</label>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Confirm Password</label>
             <Input type="password" placeholder="••••••••" {...register("confirmPassword")} />
             {errors.confirmPassword && (
               <p className="mt-1 text-xs text-red-600">{errors.confirmPassword.message}</p>
@@ -85,9 +85,9 @@ export default function Register() {
           <Button type="submit" className="w-full" disabled={mutation.isPending}>
             {mutation.isPending ? "Creating account…" : "Create Account"}
           </Button>
-          <div className="text-center text-sm text-gray-500">
+          <div className="text-center text-sm text-gray-600 dark:text-gray-400">
             Already have an account?{" "}
-            <Link to="/login" className="font-semibold text-[#36888e] hover:underline dark:text-[#71C9CE]">
+            <Link to="/login" className="font-semibold text-[#3B82F6] hover:underline dark:text-[#71C9CE]">
               Sign in
             </Link>
           </div>

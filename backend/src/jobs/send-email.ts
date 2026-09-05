@@ -36,14 +36,20 @@ export interface CampaignPort {
 }
 
 export interface TemplatePort {
-  pickRandomActive(options?: { isFollowup?: boolean }): Promise<{ id: number; subject: string; body: string } | undefined | null>;
+  pickRandomActive(options?: { isFollowup?: boolean }): Promise<{ id: number; subject: string; body: string; resumeId?: number | null } | undefined | null>;
+}
+
+export interface ResumeAttachment {
+  filename: string;
+  path: string;
 }
 
 export interface SettingsPort {
   getGeminiKey(): Promise<string>;
   getCandidateProfile(): Promise<CandidateProfile>;
   buildSignature(profile: CandidateProfile): string;
-  getResumePath(): Promise<string | null>;
+  getResumeAttachment?(resumeId?: number | null): Promise<ResumeAttachment | null>;
+  getResumePath(resumeId?: number | null): Promise<string | null>;
 }
 
 export interface PersonalizeFn {
@@ -207,10 +213,16 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
   // TEST → testEmail; LIVE → real recipient.
   const recipient = mode === "TEST" ? (settings!.testEmail as string) : contact.email;
 
-  const resumePath = await deps.settings.getResumePath();
-  const attachments = resumePath
-    ? [{ filename: path.basename(resumePath), path: resumePath }]
-    : undefined;
+  let attachment: ResumeAttachment | null = null;
+  if (deps.settings.getResumeAttachment) {
+    attachment = await deps.settings.getResumeAttachment(template.resumeId);
+  } else {
+    const resumePath = await deps.settings.getResumePath(template.resumeId);
+    if (resumePath) {
+      attachment = { filename: path.basename(resumePath), path: resumePath };
+    }
+  }
+  const attachments = attachment ? [attachment] : undefined;
 
   try {
     const provider = await deps.getProvider();

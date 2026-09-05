@@ -60,25 +60,25 @@ export default function Dashboard() {
         ) : (
           <div className="overflow-x-auto -mx-4 sm:mx-0">
             <table className="w-full text-sm min-w-[500px]">
-              <thead className="text-left text-gray-500 text-xs uppercase">
+              <thead className="text-left text-gray-700 text-xs uppercase bg-[#BAE6FD] dark:bg-gray-800/50">
                 <tr>
-                  <th className="py-2 px-3">File</th>
-                  <th className="py-2 px-3">Total</th>
-                  <th className="py-2 px-3">Imported</th>
-                  <th className="py-2 px-3">Duplicate</th>
-                  <th className="py-2 px-3">Invalid</th>
-                  <th className="py-2 px-3">Date</th>
+                  <th className="py-2.5 px-3">File</th>
+                  <th className="py-2.5 px-3">Total</th>
+                  <th className="py-2.5 px-3">Imported</th>
+                  <th className="py-2.5 px-3">Duplicate</th>
+                  <th className="py-2.5 px-3">Invalid</th>
+                  <th className="py-2.5 px-3">Date</th>
                 </tr>
               </thead>
               <tbody>
                 {d.importHistory.map((imp) => (
-                  <tr key={imp.id} className="border-t border-gray-100 dark:border-gray-800 text-xs sm:text-sm">
-                    <td className="py-2 px-3 font-medium">{imp.fileName}</td>
-                    <td className="py-2 px-3">{imp.totalRows}</td>
-                    <td className="py-2 px-3 text-emerald-600 font-semibold">{imp.importedRows}</td>
-                    <td className="py-2 px-3 text-amber-600">{imp.duplicateRows}</td>
-                    <td className="py-2 px-3 text-red-600">{imp.invalidRows}</td>
-                    <td className="py-2 px-3 text-gray-500">{new Date(imp.createdAt).toLocaleDateString()}</td>
+                  <tr key={imp.id} className="border-t border-[#BAE6FD]/60 dark:border-gray-800 text-xs sm:text-sm hover:bg-[#E0F2FE] dark:hover:bg-gray-800/30">
+                    <td className="py-2.5 px-3 font-medium">{imp.fileName}</td>
+                    <td className="py-2.5 px-3">{imp.totalRows}</td>
+                    <td className="py-2.5 px-3 text-emerald-600 dark:text-emerald-400 font-semibold">{imp.importedRows}</td>
+                    <td className="py-2.5 px-3 text-amber-600">{imp.duplicateRows}</td>
+                    <td className="py-2.5 px-3 text-red-600">{imp.invalidRows}</td>
+                    <td className="py-2.5 px-3 text-gray-500">{new Date(imp.createdAt).toLocaleDateString()}</td>
                   </tr>
                 ))}
               </tbody>

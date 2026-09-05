@@ -1,4 +1,5 @@
-import { defineConfig } from "vite";
+/// <reference types="vitest" />
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
@@ -12,7 +13,7 @@ export default defineConfig({
         name: "Mailnex — Cold Email & Outreach Automation",
         short_name: "Mailnex",
         description: "Automated Cold Emailing & Outreach Platform",
-        theme_color: "#2563EB",
+        theme_color: "#60A5FA",
         background_color: "#0B0F19",
         display: "standalone",
         orientation: "portrait",

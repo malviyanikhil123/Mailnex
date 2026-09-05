@@ -51,6 +51,13 @@ export interface ImportSummary {
   createdAt: string;
 }
 
+export interface Resume {
+  id: number;
+  name: string;
+  fileName: string;
+  createdAt: string;
+}
+
 export interface Template {
   id: number;
   name: string;
@@ -59,6 +66,8 @@ export interface Template {
   category: string;
   version: number;
   active: boolean;
+  resumeId?: number | null;
+  resume?: Resume | null;
   createdAt: string;
   updatedAt: string;
 }

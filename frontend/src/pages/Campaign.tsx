@@ -73,7 +73,7 @@ export default function Campaign() {
         </Card>
         <Card>
           <div className="text-xs sm:text-sm text-gray-500">Mode</div>
-          <div className="mt-1 text-lg sm:text-xl font-bold text-[#144b50] dark:text-[#71C9CE]">{data.mode}</div>
+          <div className="mt-1 text-lg sm:text-xl font-bold text-[#0F172A] dark:text-[#71C9CE]">{data.mode}</div>
         </Card>
         <Card>
           <div className="text-xs sm:text-sm text-gray-500">Quota Today</div>

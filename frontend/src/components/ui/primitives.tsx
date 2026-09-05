@@ -15,9 +15,9 @@ export function Button({
 }) {
   const variants: Record<string, string> = {
     primary:
-      "bg-[#71C9CE] hover:bg-[#51b2b8] text-gray-950 font-semibold shadow-xs transition active:scale-[0.99]",
+      "bg-[#60A5FA] hover:bg-[#3B82F6] text-white font-semibold shadow-xs transition active:scale-[0.99] dark:bg-[#71C9CE] dark:hover:bg-[#51b2b8] dark:text-gray-950",
     secondary:
-      "bg-[#CBF1F5]/70 hover:bg-[#A6E3E9] text-[#144b50] font-medium dark:bg-[#164549] dark:text-[#E3FDFD] dark:hover:bg-[#24666b]",
+      "bg-[#BAE6FD] hover:bg-[#E0F2FE] text-gray-900 border border-[#BAE6FD] font-medium dark:bg-[#164549] dark:text-[#E3FDFD] dark:hover:bg-[#24666b] dark:border-transparent",
     danger: "bg-red-600 hover:bg-red-700 text-white font-medium",
   };
   return (
@@ -37,7 +37,7 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-xl border border-[#CBF1F5] bg-white p-5 shadow-xs dark:border-[#164549] dark:bg-[#0e2124] ${className}`}
+      className={`rounded-xl border border-[#BAE6FD] bg-[#F1F5F9] p-5 shadow-xs dark:border-[#164549] dark:bg-[#0e2124] ${className}`}
     >
       {children}
     </div>
@@ -51,7 +51,7 @@ export const Input = forwardRef<
   return (
     <input
       ref={ref}
-      className={`w-full rounded-lg border border-[#CBF1F5] bg-white px-3 py-2 text-sm outline-none focus:border-[#71C9CE] focus:ring-2 focus:ring-[#71C9CE]/30 dark:border-[#164549] dark:bg-[#12282c] dark:text-gray-100 ${className}`}
+      className={`w-full rounded-lg border border-[#BAE6FD] bg-[#F1F5F9] px-3 py-2 text-sm outline-none focus:border-[#60A5FA] focus:ring-2 focus:ring-[#60A5FA]/30 dark:border-[#164549] dark:bg-[#12282c] dark:text-gray-100 dark:focus:border-[#71C9CE] dark:focus:ring-[#71C9CE]/30 ${className}`}
       {...props}
     />
   );
@@ -65,7 +65,7 @@ export function Textarea({
 }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
-      className={`w-full rounded-lg border border-[#CBF1F5] bg-white px-3 py-2 text-sm outline-none focus:border-[#71C9CE] focus:ring-2 focus:ring-[#71C9CE]/30 dark:border-[#164549] dark:bg-[#12282c] dark:text-gray-100 ${className}`}
+      className={`w-full rounded-lg border border-[#BAE6FD] bg-[#F1F5F9] px-3 py-2 text-sm outline-none focus:border-[#60A5FA] focus:ring-2 focus:ring-[#60A5FA]/30 dark:border-[#164549] dark:bg-[#12282c] dark:text-gray-100 dark:focus:border-[#71C9CE] dark:focus:ring-[#71C9CE]/30 ${className}`}
       {...props}
     />
   );
@@ -74,13 +74,13 @@ export function Textarea({
 export function Spinner() {
   return (
     <div className="flex justify-center p-8">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#CBF1F5] border-t-[#71C9CE]" />
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#BAE6FD] border-t-[#60A5FA] dark:border-[#164549] dark:border-t-[#71C9CE]" />
     </div>
   );
 }
 
 const statusColors: Record<string, string> = {
-  PENDING: "bg-[#E3FDFD] text-[#164549] border border-[#A6E3E9] dark:bg-[#122b2f] dark:text-[#A6E3E9]",
+  PENDING: "bg-[#BAE6FD] text-[#0F172A] border border-[#7dd3fc] dark:bg-[#122b2f] dark:text-[#A6E3E9] dark:border-transparent",
   PROCESSING: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
   SENT: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
   FAILED: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
@@ -92,7 +92,7 @@ const statusColors: Record<string, string> = {
 };
 
 export function StatusBadge({ status }: { status: string }) {
-  const color = statusColors[status] ?? "bg-[#E3FDFD] text-[#164549]";
+  const color = statusColors[status] ?? "bg-[#BAE6FD] text-[#0F172A]";
   return (
     <span
       className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${color}`}

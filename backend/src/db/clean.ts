@@ -13,6 +13,7 @@ export async function cleanDatabase() {
       contacts_imports, 
       contacts, 
       email_templates, 
+      resumes,
       campaign_settings, 
       app_settings, 
       users 

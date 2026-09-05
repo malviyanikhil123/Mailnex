@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none">
   <defs>
     <linearGradient id="mailnexGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#71C9CE" />
-      <stop offset="100%" stop-color="#36888e" />
+      <stop offset="0%" stop-color="#60A5FA" />
+      <stop offset="100%" stop-color="#3B82F6" />
     </linearGradient>
   </defs>
   <rect width="64" height="64" rx="16" fill="url(#mailnexGrad)" />
   <path d="M17 44V23L32 35L47 23V44" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M19 23L32 33L45 23" stroke="#E3FDFD" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M19 23L32 33L45 23" stroke="#E0F2FE" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
 </svg>
