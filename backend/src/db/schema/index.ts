@@ -8,3 +8,4 @@ export * from "./quota.js";
 export * from "./settings.js";
 export * from "./users.js";
 export * from "./resumes.js";
+export * from "./lead-discovery.js";

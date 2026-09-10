@@ -13,6 +13,7 @@ import { settingsRoutes } from "./modules/settings/settings.routes.js";
 import { campaignRoutes } from "./modules/campaign/campaign.routes.js";
 import { logsRoutes } from "./modules/logs/logs.routes.js";
 import { analyticsRoutes } from "./modules/analytics/analytics.routes.js";
+import { leadDiscoveryRoutes } from "./modules/lead-discovery/lead-discovery.routes.js";
 
 export async function buildApp() {
   const app = Fastify({ logger: false });
@@ -39,5 +40,6 @@ export async function buildApp() {
   await app.register(campaignRoutes, { prefix: "/campaign" });
   await app.register(logsRoutes, { prefix: "/logs" });
   await app.register(analyticsRoutes, { prefix: "/analytics" });
+  await app.register(leadDiscoveryRoutes, { prefix: "/lead-discovery" });
   return app;
 }
