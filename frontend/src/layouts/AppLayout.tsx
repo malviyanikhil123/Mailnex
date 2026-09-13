@@ -194,7 +194,7 @@ export function AppLayout() {
         </header>
 
         {/* Page Content with Responsive Padding (extra bottom padding for mobile navbar) */}
-        <main ref={mainRef} className="flex-1 overflow-auto p-4 sm:p-6 md:p-8 pb-28 sm:pb-8">
+        <main ref={mainRef} className="flex-1 overflow-auto overscroll-contain p-4 sm:p-6 md:p-8 pb-28 sm:pb-8">
           <div className="mx-auto max-w-7xl">
             <Outlet />
           </div>
