@@ -70,7 +70,7 @@ pipeline {
 
                         dir('frontend') {
                             sh """
-                                docker build -t ${IMAGE_UI} .
+                                docker build --no-cache -t ${IMAGE_UI} .
                                 docker push ${IMAGE_UI}
                             """
                         }
