@@ -162,17 +162,30 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
   const signature = deps.settings.buildSignature(profile);
   const userRole = profile.role?.trim() || "the open role";
   const userExperience = profile.experience?.trim() || "";
-  const userSkills = profile.skills && profile.skills.length > 0 ? profile.skills.join(", ") : "";
+  const userSkills = profile.skills
+    ? Array.isArray(profile.skills)
+      ? profile.skills.filter(Boolean).join(", ")
+      : profile.skills.trim()
+    : "";
 
   const flatVars: Record<string, string> = {
     company: contact.companyName,
     location: contact.location ?? "",
     candidateName: profile.name ?? "",
+    name: profile.name ?? "",
     candidateEmail: profile.email ?? "",
+    email: profile.email ?? "",
+    phone: profile.phone ?? "",
     role: userRole,
     targetRole: userRole,
     experience: userExperience,
     skills: userSkills,
+    linkedin: profile.linkedin ?? "",
+    LinkedIn: profile.linkedin ?? "",
+    github: profile.github ?? "",
+    GitHub: profile.github ?? "",
+    portfolio: profile.portfolio ?? "",
+    Portfolio: profile.portfolio ?? "",
     signature,
   };
   const rendered = {

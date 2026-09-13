@@ -194,4 +194,45 @@ describe("sendEmailJob", () => {
     expect(sent.html).toContain("Regards,");
     expect(sent.html).not.toContain("{{");
   });
+
+  it("interpolates LinkedIn, GitHub, Portfolio, phone, and email variables", async () => {
+    const { deps, send } = makeDeps({
+      mode: "LIVE",
+      template: {
+        id: 99,
+        subject: "Application for {{role}} at {{company}} — {{candidateName}}",
+        body: "Hi {{company}} team,\n" +
+              "You can find my work here:\n" +
+              "LinkedIn: {{LinkedIn}}\n" +
+              "GitHub: {{GitHub}}\n" +
+              "Portfolio: {{Portfolio}}\n\n" +
+              "Best regards,\n" +
+              "{{candidateName}}\n" +
+              "{{phone}}\n" +
+              "{{email}}",
+      },
+    });
+
+    deps.settings.getCandidateProfile = vi.fn(async () => ({
+      name: "Alex Morgan",
+      email: "alex@example.com",
+      phone: "+91 9876543210",
+      role: "Backend Engineer",
+      experience: "5+ years",
+      skills: ["Node.js", "TypeScript"],
+      linkedin: "https://linkedin.com/in/alexmorgan",
+      github: "https://github.com/alexmorgan",
+      portfolio: "https://alexmorgan.dev",
+    }));
+
+    await sendEmailJob(1, deps);
+    const sent = send.mock.calls[0][0];
+    expect(sent.subject).toBe("Application for Backend Engineer at Acme — Alex Morgan");
+    expect(sent.html).toContain("https://linkedin.com/in/alexmorgan");
+    expect(sent.html).toContain("https://github.com/alexmorgan");
+    expect(sent.html).toContain("https://alexmorgan.dev");
+    expect(sent.html).toContain("+91 9876543210");
+    expect(sent.html).toContain("alex@example.com");
+    expect(sent.html).not.toContain("{{");
+  });
 });

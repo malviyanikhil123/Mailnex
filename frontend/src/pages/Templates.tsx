@@ -84,10 +84,17 @@ export default function Templates() {
       company: "Acme Innovations",
       location: "Bengaluru",
       candidateName: "Alex Morgan",
-      role: "Product Designer",
-      targetRole: "Product Designer",
-      experience: "4+ years",
-      signature: "Regards,\nAlex Morgan\nPhone: +91 9876543210\nPortfolio: https://alexdesign.work",
+      role: "Backend Engineer",
+      targetRole: "Backend Engineer",
+      experience: "5+ years",
+      skills: "Node.js, TypeScript, Distributed Systems",
+      phone: "+91 9876543210",
+      email: "alex@example.com",
+      candidateEmail: "alex@example.com",
+      LinkedIn: "https://linkedin.com/in/alexmorgan",
+      GitHub: "https://github.com/alexmorgan",
+      Portfolio: "https://alexmorgan.dev",
+      signature: "Regards,\nAlex Morgan\nPhone: +91 9876543210\nPortfolio: https://alexmorgan.dev",
     });
     setPreview(res);
   };
@@ -415,7 +422,7 @@ export default function Templates() {
               </label>
               <Textarea
                 rows={7}
-                placeholder="Write your email body. Supported variables: {{role}}, {{targetRole}}, {{company}}, {{location}}, {{candidateName}}, {{experience}}, {{skills}}, {{signature}}"
+                placeholder="Write your email body. Supported variables: {{role}}, {{targetRole}}, {{company}}, {{location}}, {{candidateName}}, {{experience}}, {{skills}}, {{LinkedIn}}, {{GitHub}}, {{Portfolio}}, {{phone}}, {{email}}, {{signature}}"
                 value={form.body}
                 onChange={(e) => setForm({ ...form, body: e.target.value })}
               />
@@ -427,12 +434,18 @@ export default function Templates() {
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   {[
-                    "{{role}}",
                     "{{company}}",
                     "{{location}}",
+                    "{{role}}",
+                    "{{targetRole}}",
                     "{{candidateName}}",
                     "{{experience}}",
                     "{{skills}}",
+                    "{{LinkedIn}}",
+                    "{{GitHub}}",
+                    "{{Portfolio}}",
+                    "{{phone}}",
+                    "{{email}}",
                     "{{signature}}",
                   ].map((tag) => (
                     <button
@@ -453,7 +466,7 @@ export default function Templates() {
                       }
                       className="inline-flex items-center rounded-md bg-[#BAE6FD] hover:bg-[#93c5fd] active:scale-95 px-2 py-0.5 text-xs font-mono font-medium text-[#0F172A] border border-[#7dd3fc] transition dark:bg-[#164549] dark:text-[#E3FDFD] dark:border-transparent dark:hover:bg-[#24666b]"
                     >
-                      + {tag}
+                      {tag}
                     </button>
                   ))}
                 </div>

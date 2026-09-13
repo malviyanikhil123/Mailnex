@@ -49,4 +49,18 @@ describe("interpolate", () => {
   it("leaves an unknown key {{unknown}} untouched", () => {
     expect(interpolate("Hi {{unknown}}", {})).toBe("Hi {{unknown}}");
   });
+
+  it("handles case-insensitive variable matching (e.g. LinkedIn, GitHub, Portfolio)", () => {
+    const result = interpolate(
+      "GitHub: {{GitHub}}, LinkedIn: {{LinkedIn}}, Portfolio: {{Portfolio}}",
+      {
+        github: "https://github.com/alex",
+        linkedin: "https://linkedin.com/in/alex",
+        portfolio: "https://alex.dev",
+      },
+    );
+    expect(result).toBe(
+      "GitHub: https://github.com/alex, LinkedIn: https://linkedin.com/in/alex, Portfolio: https://alex.dev",
+    );
+  });
 });
