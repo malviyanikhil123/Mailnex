@@ -16,7 +16,7 @@ export function genDeps(userId: number, repo: CampaignRepo): GenerateQueueDeps {
     getSettings: async () => {
       const s = await repo.getSettings(userId);
       return s
-        ? { state: s.state, dailyLimit: s.dailyLimit, startHour: s.startHour, endHour: s.endHour }
+        ? { state: s.state, dailyLimit: s.dailyLimit, startHour: s.startHour, endHour: s.endHour, timezone: s.timezone }
         : null;
     },
     getQuota: (d) => repo.getQuota(userId, d),

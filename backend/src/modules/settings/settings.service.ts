@@ -32,6 +32,7 @@ export interface PublicSettings {
     dailyLimit: number;
     startHour: number;
     endHour: number;
+    timezone: string;
     testEmail: string | null;
     enabled: boolean;
   } | null;
@@ -172,6 +173,7 @@ export class SettingsService {
             dailyLimit: campaign.dailyLimit,
             startHour: campaign.startHour,
             endHour: campaign.endHour,
+            timezone: campaign.timezone,
             testEmail: campaign.testEmail,
             enabled: campaign.enabled,
           }

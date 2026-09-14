@@ -40,4 +40,26 @@ describe("generateSendTimes", () => {
   it("returns [] when window is non-positive", () => {
     expect(generateSendTimes(5, 18, 9, baseDate)).toEqual([]);
   });
+
+  it("returns [] when baseDate is after endHour", () => {
+    // 20:00 (8 PM) is after 18:00
+    const eveningDate = new Date(2026, 5, 18, 20, 0, 0, 0);
+    expect(generateSendTimes(10, 9, 18, eveningDate)).toEqual([]);
+  });
+
+  it("generates send times respecting timeZone (e.g. Asia/Kolkata)", () => {
+    // 04:00 UTC on Sep 14 is 09:30 AM IST (within the 9-18 window)
+    const midDayIst = new Date("2026-09-14T04:00:00.000Z");
+    const times = generateSendTimes(5, 9, 18, midDayIst, () => 0.5, "Asia/Kolkata");
+    expect(times).toHaveLength(5);
+    // 18:00 IST is 12:30 UTC
+    const endMs = new Date("2026-09-14T12:30:00.000Z").getTime();
+    for (const t of times) {
+      expect(t.getTime()).toBeLessThan(endMs);
+    }
+
+    // 15:00 UTC on Sep 14 is 20:30 IST (after 18:00 IST) -> should return []
+    const eveningIst = new Date("2026-09-14T15:00:00.000Z");
+    expect(generateSendTimes(5, 9, 18, eveningIst, () => 0.5, "Asia/Kolkata")).toEqual([]);
+  });
 });

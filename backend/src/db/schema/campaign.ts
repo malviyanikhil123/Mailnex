@@ -10,6 +10,7 @@ export const campaignSettings = pgTable("campaign_settings", {
   dailyLimit: integer("daily_limit").notNull().default(50),
   startHour: integer("start_hour").notNull().default(9),
   endHour: integer("end_hour").notNull().default(18),
+  timezone: text("timezone").notNull().default("Asia/Kolkata"),
   testEmail: text("test_email"),
   enabled: boolean("enabled").notNull().default(false),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

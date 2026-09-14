@@ -36,6 +36,7 @@ export const updateCampaignSchema = z
     dailyLimit: z.number().int().min(1).max(2000).optional(),
     startHour: z.number().int().min(0).max(23).optional(),
     endHour: z.number().int().min(1).max(24).optional(),
+    timezone: z.string().optional(),
     testEmail: z.string().email().optional().nullable().or(z.literal("")),
     enabled: z.boolean().optional(),
     emailProvider: z.string().optional(),

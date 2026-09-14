@@ -151,6 +151,7 @@ export interface PublicSettings {
     dailyLimit: number;
     startHour: number;
     endHour: number;
+    timezone?: string;
     testEmail: string | null;
     enabled: boolean;
   } | null;

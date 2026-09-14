@@ -1,10 +1,15 @@
+import { getZonedWindow } from "./timezone.js";
+
 /**
  * Generates `count` human-like send times spread across the daily sending
  * window [startHour, endHour) on `baseDate`.
  *
+ * If `timeZone` is provided, computes window bounds in that timezone.
  * If `baseDate` is currently within the sending window, scheduling starts
  * immediately from `baseDate` (with the first email scheduled right away within 1 minute),
- * and subsequent emails evenly distributed across the remainder of the day.
+ * and subsequent emails evenly distributed across the remainder of the window.
+ *
+ * If `baseDate` is past `endHour`, returns [] so no emails are sent outside the window.
  */
 export function generateSendTimes(
   count: number,
@@ -12,23 +17,33 @@ export function generateSendTimes(
   endHour: number,
   baseDate: Date,
   rand: () => number = Math.random,
+  timeZone?: string,
 ): Date[] {
   if (count <= 0) return [];
   if (endHour <= startHour) return [];
 
-  const dayStart = new Date(baseDate);
-  dayStart.setHours(startHour, 0, 0, 0);
+  let dayStart: Date;
+  let dayEnd: Date;
 
-  const dayEnd = new Date(baseDate);
-  dayEnd.setHours(endHour, 0, 0, 0);
+  if (timeZone) {
+    const window = getZonedWindow(baseDate, timeZone, startHour, endHour);
+    dayStart = window.windowStart;
+    dayEnd = window.windowEnd;
+  } else {
+    dayStart = new Date(baseDate);
+    dayStart.setHours(startHour, 0, 0, 0);
+
+    dayEnd = new Date(baseDate);
+    dayEnd.setHours(endHour, 0, 0, 0);
+  }
 
   // If baseDate is already within the sending window, start from now so emails start immediately.
   const effectiveStartMs = Math.max(dayStart.getTime(), baseDate.getTime());
   const remainingMs = dayEnd.getTime() - effectiveStartMs;
 
   if (remainingMs <= 0) {
-    // If generated after endHour, schedule with a 1-minute interval
-    return Array.from({ length: count }, (_, i) => new Date(baseDate.getTime() + (i + 1) * 60_000));
+    // Past endHour for today: do NOT schedule any emails.
+    return [];
   }
 
   const bucketMs = remainingMs / count;
@@ -44,6 +59,9 @@ export function generateSendTimes(
         : Math.floor(bucketStart + rand() * bucketMs);
 
     if (t <= lastMs) t = lastMs + 1000;
+    if (t >= dayEnd.getTime()) {
+      t = dayEnd.getTime() - 1000;
+    }
     times.push(new Date(t));
     lastMs = t;
   }

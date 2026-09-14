@@ -1,11 +1,13 @@
 import { generateSendTimes } from "../utils/schedule.js";
 import { logger } from "../utils/logger.js";
+import { getZonedWindow } from "../utils/timezone.js";
 
 export interface QueueGenSettings {
   state: string;
   dailyLimit: number;
   startHour: number;
   endHour: number;
+  timezone?: string;
 }
 
 export interface GenerateQueueDeps {
@@ -25,8 +27,9 @@ export async function generateDailyQueue(deps: GenerateQueueDeps, now: Date): Pr
   const settings = await deps.getSettings();
   if (!settings || settings.state !== "RUNNING") return 0;
 
-  const dayStart = new Date(now);
-  dayStart.setHours(0, 0, 0, 0);
+  const dayStart = settings.timezone
+    ? getZonedWindow(now, settings.timezone, 0, 24).windowStart
+    : new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
   const alreadyScheduled = await deps.countScheduledForDay(dayStart);
   if (alreadyScheduled > 0) return 0;
@@ -44,9 +47,12 @@ export async function generateDailyQueue(deps: GenerateQueueDeps, now: Date): Pr
     settings.endHour,
     now,
     deps.rand,
+    settings.timezone,
   );
 
-  const rows = selectable.map((c, i) => ({ contactId: c.id, scheduledAt: times[i] }));
+  if (times.length === 0) return 0;
+
+  const rows = selectable.slice(0, times.length).map((c, i) => ({ contactId: c.id, scheduledAt: times[i] }));
   const enqueued = await deps.enqueue(rows);
   logger.info({ enqueued, date: dayStart.toISOString().slice(0, 10) }, "daily queue generated");
   return enqueued;

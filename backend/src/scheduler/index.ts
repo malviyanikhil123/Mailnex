@@ -67,12 +67,12 @@ function buildTickDeps(userId: number): CampaignTickDeps {
   return {
     getTickSettings: async () => {
       const s = await campaignRepo.getSettings(userId);
-      return s ? { state: s.state, startHour: s.startHour, endHour: s.endHour } : null;
+      return s ? { state: s.state, startHour: s.startHour, endHour: s.endHour, timezone: s.timezone } : null;
     },
     getSettings: async () => {
       const s = await campaignRepo.getSettings(userId);
       return s
-        ? { state: s.state, dailyLimit: s.dailyLimit, startHour: s.startHour, endHour: s.endHour }
+        ? { state: s.state, dailyLimit: s.dailyLimit, startHour: s.startHour, endHour: s.endHour, timezone: s.timezone }
         : null;
     },
     getQuota: (d) => campaignRepo.getQuota(userId, d),

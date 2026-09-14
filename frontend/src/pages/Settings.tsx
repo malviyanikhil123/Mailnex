@@ -74,13 +74,15 @@ function CampaignSection({
   provider,
   onSaved,
 }: {
-  defaults: { dailyLimit: number; startHour: number; endHour: number; testEmail: string | null; mode: string } | null;
+  defaults: { dailyLimit: number; startHour: number; endHour: number; timezone?: string; testEmail: string | null; mode: string } | null;
   provider: string;
   onSaved: () => void;
 }) {
+  const detectedTz = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "Asia/Kolkata";
   const [dailyLimit, setDailyLimit] = useState(defaults?.dailyLimit ?? 50);
   const [startHour, setStartHour] = useState(defaults?.startHour ?? 9);
   const [endHour, setEndHour] = useState(defaults?.endHour ?? 18);
+  const [timezone, setTimezone] = useState(defaults?.timezone || detectedTz || "Asia/Kolkata");
   const [testEmail, setTestEmail] = useState(defaults?.testEmail ?? "");
   const m = useMutation({
     mutationFn: () =>
@@ -88,6 +90,7 @@ function CampaignSection({
         dailyLimit,
         startHour,
         endHour,
+        timezone,
         emailProvider: provider,
         ...(testEmail ? { testEmail } : {}),
       }),
@@ -97,15 +100,22 @@ function CampaignSection({
   return (
     <Card>
       <SectionHeader title="Campaign" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         <Labeled label="Daily limit">
           <Input type="number" value={dailyLimit} onChange={(e) => setDailyLimit(+e.target.value)} />
         </Labeled>
-        <Labeled label="Start hour">
+        <Labeled label="Start hour (0-23)">
           <Input type="number" value={startHour} onChange={(e) => setStartHour(+e.target.value)} />
         </Labeled>
-        <Labeled label="End hour">
+        <Labeled label="End hour (1-24)">
           <Input type="number" value={endHour} onChange={(e) => setEndHour(+e.target.value)} />
+        </Labeled>
+        <Labeled label="Timezone">
+          <Input
+            value={timezone}
+            onChange={(e) => setTimezone(e.target.value)}
+            placeholder="e.g. Asia/Kolkata"
+          />
         </Labeled>
         <Labeled label="Test email">
           <Input value={testEmail} onChange={(e) => setTestEmail(e.target.value)} />

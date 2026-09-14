@@ -15,6 +15,13 @@
       "when": 1781783764239,
       "tag": "0001_heavy_rockslide",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789397965000,
+      "tag": "0002_gorgeous_tag",
+      "breakpoints": true
     }
   ]
 }

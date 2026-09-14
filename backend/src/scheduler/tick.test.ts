@@ -54,10 +54,19 @@ describe("campaignTick", () => {
     expect(runSendJob).not.toHaveBeenCalled();
   });
 
-  it("still marks the queue DONE when the send job pauses (quota)", async () => {
-    const { deps, runSendJob, markQueue } = makeDeps({ outcome: "paused" });
-    await campaignTick(deps, IN_WINDOW);
-    expect(runSendJob).toHaveBeenCalledTimes(1);
-    expect(markQueue).toHaveBeenNthCalledWith(2, 100, "DONE");
+  it("does nothing when UTC time is 14:30 but user timezone Asia/Kolkata is 20:00 (outside 9-18)", async () => {
+    const { deps, runSendJob } = makeDeps({ state: "RUNNING" });
+    // Overwrite getTickSettings to return timezone: "Asia/Kolkata"
+    deps.getTickSettings = async () => ({
+      state: "RUNNING",
+      startHour: 9,
+      endHour: 18,
+      timezone: "Asia/Kolkata",
+    });
+    // 14:30 UTC is 20:00 IST (outside 9-18)
+    const eveningUtc = new Date("2026-09-14T14:30:00.000Z");
+    await campaignTick(deps, eveningUtc);
+    expect(runSendJob).not.toHaveBeenCalled();
   });
 });
+

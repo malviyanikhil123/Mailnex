@@ -1,11 +1,13 @@
 import { logger } from "../utils/logger.js";
 import { generateDailyQueue, type GenerateQueueDeps } from "../jobs/generate-queue.js";
 import type { SendOutcome } from "../jobs/send-email.js";
+import { getHourInTimezone } from "../utils/timezone.js";
 
 export interface TickSettings {
   state: string;
   startHour: number;
   endHour: number;
+  timezone?: string;
 }
 
 export interface CampaignTickDeps extends GenerateQueueDeps {
@@ -22,7 +24,7 @@ export async function campaignTick(deps: CampaignTickDeps, now: Date): Promise<v
   const settings = await deps.getTickSettings();
   if (!settings || settings.state !== "RUNNING") return;
 
-  const hour = now.getHours();
+  const hour = getHourInTimezone(now, settings.timezone);
   if (hour < settings.startHour || hour >= settings.endHour) return;
 
   // Ensure today's queue exists (idempotent).
