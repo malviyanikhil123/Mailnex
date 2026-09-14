@@ -58,6 +58,8 @@ export default function Campaign() {
 
   const pendingCount = data.countsByStatus?.PENDING ?? 0;
   const isRunning = data.state === "RUNNING";
+  const currentHour = new Date().getHours();
+  const isOutsideWindow = currentHour < 9 || currentHour >= 18;
 
   return (
     <div className="space-y-4">
@@ -84,13 +86,31 @@ export default function Campaign() {
         <Card>
           <div className="text-xs sm:text-sm text-gray-500">Next Scheduled</div>
           <div className="mt-1 text-xs sm:text-sm font-semibold text-gray-800 dark:text-gray-200">
-            {data.nextScheduledAt ? new Date(data.nextScheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : "—"}
+            {data.nextScheduledAt && !isOutsideWindow ? (
+              new Date(data.nextScheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            ) : isRunning ? (
+              <span className="text-sky-700 dark:text-sky-300 font-medium">Tomorrow 09:00 AM</span>
+            ) : (
+              "—"
+            )}
           </div>
         </Card>
       </div>
 
+      {/* Sending Window Closed Banner */}
+      {isRunning && isOutsideWindow && (
+        <div className="rounded-xl border border-sky-200 bg-sky-50/90 p-4 text-sm text-sky-900 dark:border-sky-900/50 dark:bg-sky-950/40 dark:text-sky-200">
+          <div className="font-semibold text-sky-950 dark:text-sky-100 mb-1 flex items-center gap-1.5">
+            <span>🌙</span> Daily Sending Window Closed (Active: 9:00 AM – 6:00 PM)
+          </div>
+          <p className="text-xs text-sky-800 dark:text-sky-300">
+            Sending is safely paused for the night to respect your sending window. Your campaign will automatically resume tomorrow at <strong>09:00 AM</strong>.
+          </p>
+        </div>
+      )}
+
       {/* Intelligent Status Helper Banner */}
-      {isRunning && !data.nextScheduledAt && (
+      {isRunning && !isOutsideWindow && !data.nextScheduledAt && (
         <div className="rounded-xl border border-amber-200 bg-amber-50/90 p-4 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
           <div className="font-semibold text-amber-950 dark:text-amber-100 mb-1 flex items-center gap-1.5">
             <span>ℹ️</span> Campaign is RUNNING, but no emails are currently queued:
