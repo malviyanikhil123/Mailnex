@@ -24,9 +24,8 @@ const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
-const PORT = Number(process.env.WEB_PORT ?? 6002);
-const FRONT_PORT = Number(process.env.FRONT_PORT ?? 5056);
-const MAIN_PORT = Number(process.env.PORT ?? 6002);
+const PORT = Number(process.env.PORT ?? 6002);
+const FRONT_PORT = Number(process.env.FRONT_PORT ?? 6003);
 
 /**
  * The page is served by its own small process on another port, so the two halves can be
@@ -37,8 +36,8 @@ const MAIN_PORT = Number(process.env.PORT ?? 6002);
 const TRUSTED = new Set([
   `http://localhost:${FRONT_PORT}`, `http://127.0.0.1:${FRONT_PORT}`,
   `http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`,
-  `http://localhost:${MAIN_PORT}`, `http://127.0.0.1:${MAIN_PORT}`,
   `http://localhost:6001`, `http://127.0.0.1:6001`,
+  `http://localhost:5056`, `http://127.0.0.1:5056`,
 ]);
 
 app.use((req, res, next) => {

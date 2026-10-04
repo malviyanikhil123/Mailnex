@@ -9,7 +9,8 @@ const defaultDbUrl = process.env.DATABASE_URL
 /** Every value the system needs. Secrets live only in .env, never in code or logs. */
 const schema = z.object({
   DATABASE_URL: z.string().default(defaultDbUrl),
-  WEB_PORT: z.coerce.number().default(5055),
+  PORT: z.coerce.number().default(Number(process.env.PORT ?? 6002)),
+  WEB_PORT: z.coerce.number().optional().default(Number(process.env.PORT ?? 6002)),
   FRONT_PORT: z.coerce.number().default(5056),
   API_URL: z.string().optional(),
   GMAIL_EMAIL: z.string().email().optional(),

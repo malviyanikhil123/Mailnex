@@ -9,7 +9,7 @@ import { log } from '../shared/log.js';
  */
 const app = express();
 const PORT = Number(process.env.FRONT_PORT ?? 5056);
-const API = process.env.API_URL ?? `http://localhost:${process.env.WEB_PORT ?? 5055}`;
+const API = process.env.API_URL ?? process.env.VITE_API_URL ?? `http://localhost:${process.env.PORT ?? 6002}`;
 
 // The page reads this to find the API. Written here rather than baked into the file,
 // so the same page works whoever is serving it.
