@@ -9,6 +9,9 @@ import { getEmailProvider } from "../integrations/email/factory.js";
 import type { EmailProvider } from "../integrations/email/provider.js";
 import { sendEmailJob, type SendEmailDeps } from "../jobs/send-email.js";
 import { campaignTick, type CampaignTickDeps } from "./tick.js";
+import { INBOX } from "../config/constants.js";
+import { inboxRepo } from "../modules/inbox/inbox.repo.js";
+import { runClassifyForUser, runSyncForUser } from "../modules/inbox/inbox.service.js";
 
 // Tracks userIds whose campaign was auto-paused by hitting the Gmail daily quota,
 // so the midnight job only auto-resumes quota-pauses (not manual pauses).
@@ -92,6 +95,71 @@ function buildTickDeps(userId: number): CampaignTickDeps {
 // Tracks userIds currently executing a tick to prevent overlapping/simultaneous sends.
 const userRunningTicks = new Set<number>();
 
+/**
+ * Tracks userIds currently syncing their inbox.
+ *
+ * Process-local, exactly like userRunningTicks above. With more than one backend
+ * replica two processes can sync the same user at once, which is harmless here: the
+ * UID unique index plus onConflictDoNothing makes ingestion idempotent and the trash
+ * flow is UID-keyed, so the worst case is duplicated work, never duplicated rows.
+ * If this ever scales out, wrap the pass in
+ * SELECT pg_try_advisory_lock(hashtext('inbox-sync:' || $userId)).
+ */
+const inboxRunningUsers = new Set<number>();
+
+/**
+ * One pass over every user whose backoff window has expired.
+ *
+ * Users are processed SEQUENTIALLY — a deliberate divergence from the send tick,
+ * which fans out concurrently — so N users never means N simultaneous IMAP sockets.
+ */
+async function runInboxPass(now: Date): Promise<void> {
+  const userIds = await inboxRepo.listSyncableUserIds(now);
+  for (const userId of userIds) {
+    if (inboxRunningUsers.has(userId)) {
+      logger.debug({ userId }, "inbox sync already in progress — skipping");
+      continue;
+    }
+    inboxRunningUsers.add(userId);
+    try {
+      const synced = await runSyncForUser(userId);
+      // Only classify when something actually arrived, so an idle account costs
+      // nothing and no Gemini quota is spent on an empty pass.
+      if (synced.outcome === "ok" && synced.inserted > 0) {
+        const sorted = await runClassifyForUser(userId, "new");
+        logger.info(
+          { userId, inserted: synced.inserted, byRule: sorted.byRule, byAi: sorted.byAi },
+          "inbox synced and sorted",
+        );
+      }
+    } catch (err) {
+      logger.error({ err, userId }, "inbox sync pass failed");
+    } finally {
+      inboxRunningUsers.delete(userId);
+    }
+  }
+}
+
+/** Nightly housekeeping: retention, trash cleanup, and stuck-delete recovery. */
+async function runInboxRetention(now: Date): Promise<void> {
+  // Fail-open recovery first: a delete interrupted by a crash must not leave a
+  // message hidden forever, so anything stuck comes back into the inbox.
+  const restored = await inboxRepo.revertStaleTrashPending(
+    new Date(now.getTime() - INBOX.TRASH_PENDING_STALE_MS),
+  );
+
+  // Retention is a hard requirement, not a nicety: these rows hold real personal
+  // mail in plaintext, so the window past which we stop keeping it is enforced.
+  const purgedActive = await inboxRepo.purgeOldMessages(
+    new Date(now.getTime() - INBOX.RETENTION_DAYS * 86_400_000),
+  );
+  const purgedTrash = await inboxRepo.purgeTrashed(
+    new Date(now.getTime() - INBOX.TRASH_RETENTION_DAYS * 86_400_000),
+  );
+
+  logger.info({ restored, purgedActive, purgedTrash }, "inbox retention pass finished");
+}
+
 /** Starts the per-minute multi-user campaign ticks and the midnight auto-resume job. */
 export function startScheduler(): void {
   // Every minute: process at most one due email per active running user.
@@ -139,5 +207,23 @@ export function startScheduler(): void {
     })();
   });
 
-  logger.info("multi-user scheduler started (per-minute tick + midnight auto-resume)");
+  // Every 10 minutes: pull new inbox mail and sort it.
+  //
+  // Deliberately decoupled from the per-minute send tick so a slow IMAP round-trip
+  // can never delay an outgoing email. One short-lived connection per user per tick
+  // is 144/day — nowhere near Gmail's limits, and responsive enough for an inbox.
+  cron.schedule(INBOX.SYNC_CRON, () => {
+    void runInboxPass(new Date()).catch((err) => {
+      logger.error({ err }, "inbox scheduler loop failed");
+    });
+  });
+
+  // 3am: inbox retention and stuck-delete recovery.
+  cron.schedule("0 3 * * *", () => {
+    void runInboxRetention(new Date()).catch((err) => {
+      logger.error({ err }, "inbox retention pass failed");
+    });
+  });
+
+  logger.info("multi-user scheduler started (per-minute send tick, 10-minute inbox sync, midnight auto-resume, 3am retention)");
 }

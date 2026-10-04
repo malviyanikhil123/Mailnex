@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { templatesApi, type TemplateInput } from "../services/templates.api";
 import { settingsApi } from "../services/settings.api";
 import { Button, Card, Input, Textarea, Spinner, ErrorState } from "../components/ui/primitives";
+import { Modal } from "../components/ui/Modal";
 import { toast } from "../store/toast";
 import type { Template } from "../types/api";
 
@@ -84,10 +85,17 @@ export default function Templates() {
       company: "Acme Innovations",
       location: "Bengaluru",
       candidateName: "Alex Morgan",
-      role: "Product Designer",
-      targetRole: "Product Designer",
-      experience: "4+ years",
-      signature: "Regards,\nAlex Morgan\nPhone: +91 9876543210\nPortfolio: https://alexdesign.work",
+      role: "Backend Engineer",
+      targetRole: "Backend Engineer",
+      experience: "5+ years",
+      skills: "Node.js, TypeScript, Distributed Systems",
+      phone: "+91 9876543210",
+      email: "alex@example.com",
+      candidateEmail: "alex@example.com",
+      LinkedIn: "https://linkedin.com/in/alexmorgan",
+      GitHub: "https://github.com/alexmorgan",
+      Portfolio: "https://alexmorgan.dev",
+      signature: "Regards,\nAlex Morgan\nPhone: +91 9876543210\nPortfolio: https://alexmorgan.dev",
     });
     setPreview(res);
   };
@@ -415,7 +423,7 @@ export default function Templates() {
               </label>
               <Textarea
                 rows={7}
-                placeholder="Write your email body. Supported variables: {{role}}, {{targetRole}}, {{company}}, {{location}}, {{candidateName}}, {{experience}}, {{skills}}, {{signature}}"
+                placeholder="Write your email body. Supported variables: {{role}}, {{targetRole}}, {{company}}, {{location}}, {{candidateName}}, {{experience}}, {{skills}}, {{LinkedIn}}, {{GitHub}}, {{Portfolio}}, {{phone}}, {{email}}, {{signature}}"
                 value={form.body}
                 onChange={(e) => setForm({ ...form, body: e.target.value })}
               />
@@ -427,12 +435,18 @@ export default function Templates() {
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   {[
-                    "{{role}}",
                     "{{company}}",
                     "{{location}}",
+                    "{{role}}",
+                    "{{targetRole}}",
                     "{{candidateName}}",
                     "{{experience}}",
                     "{{skills}}",
+                    "{{LinkedIn}}",
+                    "{{GitHub}}",
+                    "{{Portfolio}}",
+                    "{{phone}}",
+                    "{{email}}",
                     "{{signature}}",
                   ].map((tag) => (
                     <button
@@ -453,7 +467,7 @@ export default function Templates() {
                       }
                       className="inline-flex items-center rounded-md bg-[#BAE6FD] hover:bg-[#93c5fd] active:scale-95 px-2 py-0.5 text-xs font-mono font-medium text-[#0F172A] border border-[#7dd3fc] transition dark:bg-[#164549] dark:text-[#E3FDFD] dark:border-transparent dark:hover:bg-[#24666b]"
                     >
-                      + {tag}
+                      {tag}
                     </button>
                   ))}
                 </div>
@@ -494,37 +508,6 @@ export default function Templates() {
           </div>
         </Modal>
       )}
-    </div>
-  );
-}
-
-function Modal({
-  title,
-  children,
-  onClose,
-}: {
-  title: string;
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="w-full max-w-lg rounded-2xl bg-[#F1F5F9] border border-[#BAE6FD] p-4 sm:p-6 shadow-2xl dark:bg-gray-900 dark:border-gray-800 max-h-[92vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3.5 flex items-center justify-between">
-          <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100">{title}</h2>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-gray-400 hover:text-gray-700 hover:bg-[#BAE6FD]/40 dark:hover:text-gray-200 dark:hover:bg-gray-800 transition"
-            aria-label="Close dialog"
-          >
-            ✕
-          </button>
-        </div>
-        {children}
-      </div>
     </div>
   );
 }

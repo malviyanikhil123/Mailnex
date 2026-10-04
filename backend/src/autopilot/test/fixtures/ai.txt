@@ -1,0 +1,36 @@
+Daniel Osei
++44-7700-900123
+daniel.osei.test@example.invalid
+London, United Kingdom
+
+Summary
+AI Engineer with three years of experience taking language-model features from a
+notebook to production. Strong on retrieval systems and evaluation. Seeking a
+Senior AI Engineer or Machine Learning Engineer position.
+
+Experience
+Featherstone AI Ltd.
+AI Engineer, London
+09/2023 - Present
+Built the retrieval pipeline behind a legal research assistant used by 4,000 solicitors.
+Reduced hallucinated citations by 62% by adding span-level grounding checks.
+Ran the evaluation harness: 1,800 graded cases, nightly regression scoring.
+Served fine-tuned models on GPU infrastructure at roughly 90 requests a second.
+
+Ocado Technology
+Machine Learning Engineer, Hatfield
+08/2022 - 08/2023
+Forecasting models for warehouse demand; cut waste by 7% in the first quarter.
+
+Skills
+Python, PyTorch, Hugging Face Transformers, LangChain, vector databases, Qdrant,
+pgvector, RAG, prompt engineering, model evaluation, MLflow, Ray, FastAPI, AWS Bedrock
+
+Education
+MSc Machine Learning
+University College London
+09/2022
+
+BSc Computer Science
+University of Manchester
+07/2021

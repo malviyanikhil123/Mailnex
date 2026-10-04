@@ -8,6 +8,8 @@ import { useTheme } from "./store/theme";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
+import Inbox from "./pages/Inbox";
+import InboxCategories from "./pages/InboxCategories";
 import Contacts from "./pages/Contacts";
 import Templates from "./pages/Templates";
 import Campaign from "./pages/Campaign";
@@ -19,9 +21,9 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      refetchOnWindowFocus: true,
+      refetchOnWindowFocus: false,
       refetchOnReconnect: true,
-      staleTime: 5000,
+      staleTime: 30000,
     },
   },
 });
@@ -39,6 +41,8 @@ export default function App() {
           <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/inbox" element={<Inbox />} />
+              <Route path="/inbox/categories" element={<InboxCategories />} />
               <Route path="/contacts" element={<Contacts />} />
               <Route path="/templates" element={<Templates />} />
               <Route path="/campaign" element={<Campaign />} />

@@ -1,0 +1,33 @@
+Priya Ramanathan
++91-9812345670
+priya.raman.test@example.invalid
+Bengaluru, Karnataka
+
+Summary
+Backend-leaning Software Engineer with four years of experience building payment and
+order systems at scale. Comfortable across Java, Go and TypeScript. Looking for a
+Senior Software Engineer role.
+
+Experience
+Zolve Technologies Pvt. Ltd.
+Software Engineer, Bengaluru
+07/2022 - Present
+Built and ran the settlement service handling 1.2 million transactions a day.
+Cut p99 checkout latency from 940ms to 310ms by reworking the pricing cache.
+Led the migration of 40 services from Java 11 to Java 21.
+Mentored three junior engineers through their first on-call rotations.
+
+Infosys Limited
+Associate Software Engineer, Pune
+06/2021 - 06/2022
+Wrote REST services for a retail banking client in Spring Boot.
+Raised unit test coverage on the payments module from 34% to 81%.
+
+Skills
+Java, Go, TypeScript, Spring Boot, PostgreSQL, Kafka, Redis, Docker, Kubernetes,
+AWS, Terraform, gRPC, system design, distributed systems
+
+Education
+Bachelor of Engineering, Computer Science
+R V College of Engineering, Bengaluru
+06/2021

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
+  Inbox,
   Users,
   FileText,
   Send,
@@ -18,6 +19,7 @@ import { PwaInstallBanner } from "../components/PwaInstallBanner";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/inbox", label: "Inbox", icon: Inbox },
   { to: "/contacts", label: "Contacts", icon: Users },
   { to: "/templates", label: "Templates", icon: FileText },
   { to: "/campaign", label: "Campaign", icon: Send },
@@ -194,7 +196,7 @@ export function AppLayout() {
         </header>
 
         {/* Page Content with Responsive Padding (extra bottom padding for mobile navbar) */}
-        <main ref={mainRef} className="flex-1 overflow-auto p-4 sm:p-6 md:p-8 pb-28 sm:pb-8">
+        <main ref={mainRef} className="flex-1 overflow-auto overscroll-contain p-4 sm:p-6 md:p-8 pb-28 sm:pb-8">
           <div className="mx-auto max-w-7xl">
             <Outlet />
           </div>
@@ -207,7 +209,7 @@ export function AppLayout() {
             navVisible ? "translate-y-0 opacity-100 scale-100" : "translate-y-28 opacity-0 pointer-events-none scale-95"
           }`}
         >
-          <div className="flex items-center justify-around bg-[#1e293b]/95 dark:bg-[#081518]/95 backdrop-blur-xl border border-slate-700/60 dark:border-[#164549] shadow-2xl rounded-3xl py-2.5 px-3">
+          <div className="flex items-center justify-start gap-1 overflow-x-auto no-scrollbar bg-[#1e293b]/95 dark:bg-[#081518]/95 backdrop-blur-xl border border-slate-700/60 dark:border-[#164549] shadow-2xl rounded-3xl py-2.5 px-3">
             {nav.map(({ to, label, icon: Icon, end }) => {
               const isActive = end
                 ? location.pathname === to

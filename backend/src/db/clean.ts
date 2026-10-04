@@ -7,6 +7,10 @@ export async function cleanDatabase() {
   // Truncate all tables and reset ID sequences
   await db.execute(
     sql`TRUNCATE TABLE 
+      inbox_messages, 
+      inbox_category_rules, 
+      inbox_categories, 
+      inbox_sync_state, 
       email_logs, 
       campaign_queue, 
       daily_quota, 

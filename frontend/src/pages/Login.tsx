@@ -8,6 +8,24 @@ import { useAuth } from "../store/auth";
 import { toast } from "../store/toast";
 import { Button, Card, Input } from "../components/ui/primitives";
 
+/**
+ * Distinguishes "the server said no" from "the server never answered".
+ *
+ * Reporting every failure as "Invalid credentials" sends people off hunting for a
+ * typo when the real problem is that the API is down or pointed at the wrong port.
+ */
+function loginErrorMessage(err: unknown): string {
+  const e = err as { response?: { status?: number }; code?: string };
+  if (!e?.response) {
+    return e?.code === "ECONNABORTED"
+      ? "The server took too long to respond. Please try again."
+      : "Can't reach the server. Check that the backend is running.";
+  }
+  if (e.response.status === 401) return "Invalid credentials";
+  if (e.response.status === 429) return "Too many attempts. Please wait a moment.";
+  return "Something went wrong signing you in. Please try again.";
+}
+
 const schema = z.object({
   email: z.string().email("Enter a valid email"),
   password: z.string().min(1, "Password is required"),
@@ -29,7 +47,7 @@ export default function Login() {
       setAuth(data);
       navigate("/");
     },
-    onError: () => toast.error("Invalid credentials"),
+    onError: (err) => toast.error(loginErrorMessage(err)),
   });
 
   return (

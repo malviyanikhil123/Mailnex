@@ -156,120 +156,169 @@ export interface PublicSettings {
   } | null;
 }
 
-export type EmailCategory =
-  | "HR"
-  | "Recruitment"
-  | "Careers"
-  | "IT"
-  | "Accounts"
-  | "Finance"
-  | "Sales"
-  | "General"
-  | "Other"
-  | "Unknown";
+// ---------------------------------------------------------------------------
+// Inbox Sorter
+// ---------------------------------------------------------------------------
 
-export type DiscoveryJobStatus =
-  | "QUEUED"
-  | "RUNNING"
-  | "COMPLETED"
-  | "FAILED"
-  | "CANCELLED";
+export type InboxAssignmentSource = "NONE" | "RULE" | "AI" | "MANUAL";
+export type InboxMessageState = "ACTIVE" | "TRASH_PENDING" | "TRASHED";
+export type InboxRuleField = "FROM_ADDRESS" | "FROM_DOMAIN" | "SUBJECT" | "BODY" | "ANY_TEXT";
+export type InboxRuleMatch = "CONTAINS" | "EQUALS" | "STARTS_WITH" | "ENDS_WITH" | "REGEX";
+export type InboxSyncStatus = "IDLE" | "RUNNING" | "SUCCESS" | "ERROR";
 
-export interface DiscoveryJob {
+export type JobApplicationStatus =
+  | "APPLIED" | "ACKNOWLEDGED" | "RECRUITER_REPLY" | "INTERVIEW_INVITE"
+  | "ASSESSMENT" | "OFFER" | "REJECTION" | "WITHDRAWN" | "OTHER";
+
+export interface InboxCategory {
   id: number;
-  userId: number;
-  location: string | null;
-  profession: string | null;
-  keywords: string | null;
-  companyType: string | null;
-  targetCount: number;
-  status: DiscoveryJobStatus;
-  companiesFound: number;
-  pagesCrawled: number;
-  emailsFound: number;
-  hrEmailsFound: number;
-  duplicatesRemoved: number;
-  currentDomain: string | null;
-  progress: number;
-  startedAt: string | null;
-  completedAt: string | null;
-  error: string | null;
+  name: string;
+  slug: string;
+  description: string;
+  color: string;
+  sortOrder: number;
+  trackSubStatus: boolean;
+  ruleCount: number;
+  messageCount: number;
+  unreadCount: number;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface DiscoveredLead {
+export interface InboxCategoryRule {
   id: number;
-  userId: number;
-  jobId: number | null;
-  email: string;
-  normalizedEmail: string;
-  name: string | null;
-  companyName: string | null;
-  companyDomain: string | null;
-  companyType: string | null;
-  industry: string | null;
-  location: string | null;
-  emailCategory: EmailCategory;
-  classificationConfidence: number;
-  sourceUrl: string | null;
-  isValid: boolean;
-  isDuplicate: boolean;
-  isImported: boolean;
-  importedContactId: number | null;
-  discoveredAt: string;
-  createdAt: string;
-  updatedAt: string;
+  categoryId: number;
+  field: InboxRuleField;
+  matchType: InboxRuleMatch;
+  value: string;
+  valueNormalized: string;
+  priority: number;
+  enabled: boolean;
+  subStatus: JobApplicationStatus | null;
+  matchCount: number;
+  lastMatchedAt: string | null;
 }
 
-export interface CreateDiscoveryJobInput {
-  location?: string;
-  profession?: string;
-  keywords?: string;
-  companyType?: string;
-  targetCount?: number;
+export interface InboxMessage {
+  id: number;
+  categoryId: number | null;
+  categoryName: string | null;
+  categoryColor: string | null;
+  assignmentSource: InboxAssignmentSource;
+  matchedRuleId: number | null;
+  /** Pre-rendered, e.g. 'subject contains "interview"'. */
+  matchedRuleLabel: string | null;
+  aiConfidence: number | null;
+  aiReason: string | null;
+  manualOverride: boolean;
+  classifiedAt: string | null;
+  jobStatus: JobApplicationStatus | null;
+  jobCompany: string | null;
+  jobRole: string | null;
+  fromName: string | null;
+  fromAddress: string;
+  fromDomain: string;
+  subject: string;
+  snippet: string;
+  receivedAt: string;
+  isUnread: boolean;
+  hasAttachments: boolean;
+  state: InboxMessageState;
+  deleteError: string | null;
 }
 
-export interface ListLeadsQuery {
-  jobId?: number;
-  emailCategory?: string;
-  companyType?: string;
-  search?: string;
-  isImported?: boolean;
-  page?: number;
-  limit?: number;
+export interface InboxMessageDetail extends InboxMessage {
+  bodyText: string;
+  toAddress: string | null;
+  messageId: string | null;
+  uid: number;
+  mailbox: string;
+  sizeBytes: number | null;
+  gmailThreadId: string | null;
 }
 
-export interface DiscoveryMetricSet {
-  companiesFound: number;
-  pagesCrawled: number;
-  emailsFound: number;
-  hrEmailsFound: number;
-  itEmailsFound: number;
-  accountsEmailsFound: number;
-  otherEmailsFound: number;
-  duplicatesRemoved: number;
+export interface InboxStats {
+  total: number;
+  uncategorized: number;
+  unread: number;
+  trashed: number;
+  byRule: number;
+  byAi: number;
+  byManual: number;
+  byJobStatus: Array<{ status: JobApplicationStatus | null; count: number }>;
+  byCategory: Array<{
+    categoryId: number;
+    name: string;
+    color: string;
+    trackSubStatus: boolean;
+    count: number;
+    unread: number;
+  }>;
+  lastSyncAt: string | null;
+  lastSyncStatus: InboxSyncStatus;
+  lastSyncError: string | null;
 }
 
-export interface DiscoveryStats {
-  today: DiscoveryMetricSet;
-  yesterday: DiscoveryMetricSet;
-  last7Days: DiscoveryMetricSet;
-  last30Days: DiscoveryMetricSet;
-  dailyTrend: Array<{
-    date: string;
-    emailsFound: number;
-    hrEmails: number;
-    companies: number;
+export interface InboxSyncState {
+  enabled: boolean;
+  lastSyncAt: string | null;
+  lastSyncStatus: InboxSyncStatus;
+  lastSyncError: string | null;
+  lastSyncErrorCode: string | null;
+  consecutiveFailures: number;
+  nextAttemptAt: string | null;
+  initialSyncDoneAt: string | null;
+  messagesFetchedLast: number;
+  syncWindowDays: number;
+  gmailConfigured: boolean;
+}
+
+export interface InboxJobProgress {
+  jobId: string;
+  kind: "sync" | "classify";
+  phase: string;
+  processed: number;
+  total: number;
+  done: boolean;
+  result?: InboxSyncResult | InboxClassifyResult;
+  error?: string;
+}
+
+export interface InboxSyncResult {
+  outcome: "ok" | "skipped" | "not_configured" | "error";
+  fetched: number;
+  inserted: number;
+  duplicates: number;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+export interface InboxClassifyResult {
+  outcome: "ok" | "no_categories" | "nothing_to_do";
+  examined: number;
+  byRule: number;
+  byAi: number;
+  uncategorized: number;
+  skippedManual: number;
+  aiCalls: number;
+}
+
+export interface InboxRuleTestResult {
+  matches: number;
+  scanned: number;
+  sample: Array<{
+    id: number;
+    fromAddress: string;
+    subject: string;
+    snippet: string;
+    receivedAt: string;
+    categoryId: number | null;
   }>;
 }
 
-export interface ImportLeadsInput {
-  leadIds: number[];
+export interface InboxDeleteResult {
+  requested: number;
+  trashed: number;
+  failed: number;
+  failures: Array<{ id: number; error: string }>;
 }
-
-export interface ImportLeadsResponse {
-  imported: number;
-  skipped: number;
-}
-

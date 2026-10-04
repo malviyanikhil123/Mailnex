@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Canopy · Job Autopilot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Caveat:wght@500;700&family=Geist+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{--jungle:#0B2418;--moss:#16382A;--moss-2:#1E4A2E;--leaf:#7BD389;--fly:#FFC247;--paper:#F3EBD3;--paper-2:#E8DDBF;--ink:#1F3A26;--bark:#6B4A2F;--dim:#B7C4A6;--red:#E4572E;
+    --d:"Bricolage Grotesque",sans-serif;--hand:"Caveat",cursive;--mono:"Geist Mono",monospace}
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%}
+  body{background:var(--jungle);color:var(--paper);font:15px/1.5 var(--d);overflow-x:hidden}
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.5;
+    background:radial-gradient(60% 50% at 80% 0%,rgba(123,211,137,.14),transparent 70%),radial-gradient(50% 40% at 0% 100%,rgba(255,194,71,.08),transparent 70%)}
+  button{font:inherit;color:inherit;cursor:pointer}
+  ::selection{background:var(--fly);color:var(--jungle)}
+  :focus-visible{outline:2px dashed var(--fly);outline-offset:3px}
+  #world{position:fixed;inset:0;z-index:0;transition:inset .8s cubic-bezier(.16,1,.3,1),opacity .6s}
+  body[data-screen="overview"] #world{inset:96px 50% 0 0}
+  body[data-screen="jobs"] #world,body[data-screen="sources"] #world,body[data-screen="profile"] #world,body[data-screen="kit"] #world{opacity:0;pointer-events:none}
+  #app{position:relative;z-index:1;min-height:100vh}
+
+  /* ---------- trail navigation ---------- */
+  .trail{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:22px;height:96px;padding:0 32px;background:linear-gradient(180deg,var(--jungle) 60%,transparent)}
+  .logo{display:flex;align-items:center;gap:10px;font:800 20px/1 var(--d);letter-spacing:-.02em;white-space:nowrap}
+  .logo svg{flex:none}
+  .path{position:relative;display:flex;align-items:center;gap:0;margin:0 auto}
+  .path::before{content:"";position:absolute;left:24px;right:24px;top:17px;border-top:2px dashed rgba(243,235,211,.25)}
+  .stop{position:relative;display:grid;justify-items:center;gap:6px;width:112px;border:0;background:none;padding:0;color:var(--dim)}
+  .stop i{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--moss);border:2px solid rgba(243,235,211,.25);transition:all .25s}
+  .stop i svg{stroke:currentColor}
+  .stop span{font:600 13px/1 var(--d)}
+  .stop small{font:500 15px/1 var(--hand);color:var(--leaf);opacity:0;transition:opacity .2s}
+  .stop:hover{color:var(--paper)}
+  .stop:hover small,.stop[aria-current] small{opacity:1}
+  .stop[aria-current]{color:var(--fly)}
+  .stop[aria-current] i{background:var(--fly);color:var(--jungle);border-color:var(--fly);box-shadow:0 0 0 6px rgba(255,194,71,.18),0 0 24px rgba(255,194,71,.4)}
+  .pack{display:flex;align-items:center;gap:10px}
+  .avatar{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--leaf);color:var(--jungle);font:800 15px var(--d);border:0}
+
+  /* ---------- journal (overview right half) ---------- */
+  .journal{position:relative;margin:0 32px 40px 50%;padding:34px 38px 40px;min-height:calc(100vh - 136px);background:var(--paper);color:var(--ink);border-radius:6px 18px 18px 6px;
+    box-shadow:-18px 0 0 -8px var(--paper-2),0 30px 60px rgba(0,0,0,.35);
+    background-image:repeating-linear-gradient(180deg,transparent 0 31px,rgba(31,58,38,.08) 31px 32px)}
+  .journal::before{content:"";position:absolute;left:-2px;top:20px;bottom:20px;width:6px;border-radius:3px;background:repeating-linear-gradient(180deg,var(--bark) 0 10px,transparent 10px 22px)}
+  .journal h1{margin:0;font:800 42px/1 var(--d);letter-spacing:-.03em}
+  .date{font:600 22px/1 var(--hand);color:var(--bark);margin-bottom:10px}
+  .lead{font-size:16px;margin:12px 0 26px;max-width:46ch}
+  .lead mark{background:linear-gradient(transparent 55%,rgba(255,194,71,.6) 55%);color:inherit;padding:0 2px}
+  .tally{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:2px solid var(--ink);border-bottom:2px solid var(--ink);margin-bottom:28px}
+  .tally div{padding:14px 12px;border-right:1px dashed rgba(31,58,38,.35)}
+  .tally div:last-child{border-right:0}
+  .tally b{display:block;font:600 30px/1 var(--mono);letter-spacing:-.03em}
+  .tally span{font-size:12.5px;color:#4d6450}
+  .tally div:first-child b{color:#B7791F}
+  .sect{display:flex;align-items:baseline;gap:10px;margin:0 0 12px}
+  .sect h2{margin:0;font:800 19px/1 var(--d)}
+  .sect em{font:600 18px/1 var(--hand);color:var(--bark)}
+  .sightings{display:grid;grid-template-columns:1fr 1fr;gap:4px 28px;margin-bottom:28px}
+  .sight{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 10px;padding:7px 8px;margin:0 -8px;border:0;border-radius:8px;background:none;text-align:left;color:var(--ink)}
+  .sight:hover,.sight.on{background:rgba(255,194,71,.25)}
+  .sight .marks{grid-column:1/-1;display:flex;gap:3px}
+  .sight .marks i{width:3px;height:14px;background:var(--ink);border-radius:2px;transform:rotate(8deg)}
+  .sight .marks i:nth-child(5n){width:22px;height:3px;margin:6px 0 0 -22px;transform:rotate(-24deg)}
+  .sight b{font:600 14px var(--mono)}
+  .trailchart{display:flex;align-items:flex-end;gap:5px;height:90px;padding-bottom:4px;border-bottom:2px solid var(--ink)}
+  .trailchart span{flex:1;position:relative;background:var(--leaf);border-radius:40px 40px 4px 4px;min-height:4px;transform-origin:bottom;animation:grow .9s cubic-bezier(.16,1,.3,1) both}
+  .trailchart span.zero{background:rgba(31,58,38,.15)}
+  .trailchart span:hover::after{content:attr(data-n);position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);font:12px var(--mono)}
+  @keyframes grow{from{transform:scaleY(0)}}
+  .note{margin-top:16px;font:600 20px/1.2 var(--hand);color:var(--bark);transform:rotate(-1.5deg)}
+  .island-cap{position:fixed;left:32px;bottom:28px;z-index:2;max-width:320px;font:600 20px/1.2 var(--hand);color:var(--fly)}
+  .island-cap small{display:block;font:400 13px/1.4 var(--d);color:var(--dim)}
+
+  /* ---------- page frame for inner screens ---------- */
+  .page{max-width:1180px;margin:0 auto;padding:10px 32px 120px}
+  .pagehead{display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap;margin:6px 0 24px}
+  .pagehead h1{margin:0;font:800 48px/1 var(--d);letter-spacing:-.03em}
+  .pagehead p{margin:6px 0 0;color:var(--dim)}
+  .pagehead .scrib{font:600 22px/1 var(--hand);color:var(--leaf)}
+
+  /* field-note job cards */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px;align-items:center}
+  .chip{padding:9px 16px;border-radius:99px;border:1.5px solid rgba(243,235,211,.25);background:transparent;font-weight:600;font-size:14px;transition:all .2s}
+  .chip:hover{border-color:var(--leaf)}
+  .chip[aria-pressed="true"]{background:var(--leaf);border-color:var(--leaf);color:var(--jungle)}
+  .search{flex:1;min-width:220px;max-width:360px;height:42px;padding:0 16px 0 40px;border-radius:99px;border:1.5px solid rgba(243,235,211,.25);background:var(--moss) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23B7C4A6' stroke-width='1.8'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='M11 11l4 4'/%3E%3C/svg%3E") no-repeat 15px center;color:var(--paper);font:15px var(--d);outline:none}
+  .search:focus{border-color:var(--fly)}
+  .notes{columns:3 300px;column-gap:22px}
+  .fn{break-inside:avoid;position:relative;margin:0 0 22px;padding:22px 20px 18px;background:var(--paper);color:var(--ink);border-radius:4px;cursor:pointer;
+    box-shadow:0 14px 30px rgba(0,0,0,.3);transform:rotate(var(--r,0deg));transition:transform .3s cubic-bezier(.16,1,.3,1),box-shadow .3s}
+  .fn:hover{transform:rotate(0) translateY(-4px) scale(1.01);box-shadow:0 22px 40px rgba(0,0,0,.4)}
+  .fn::before{content:"";position:absolute;top:-9px;left:50%;width:18px;height:18px;margin-left:-9px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ff8a5b,#b8421c);box-shadow:0 3px 4px rgba(0,0,0,.3)}
+  .fn .fit{position:absolute;top:14px;right:14px;width:48px;height:48px;display:grid;place-items:center;font:700 14px var(--mono);color:var(--jungle);
+    background:var(--leaf);border-radius:0 50% 0 50%;transform:rotate(-8deg)}
+  .fn h3{margin:0 56px 4px 0;font:800 19px/1.2 var(--d)}
+  .fn .co{font:600 19px/1 var(--hand);color:var(--bark)}
+  .fn .meta{display:flex;flex-wrap:wrap;gap:6px 12px;margin:12px 0;font-size:13px;color:#4d6450}
+  .fn .tags{display:flex;gap:6px;flex-wrap:wrap}
+  .fn .tags span{padding:3px 8px;border-radius:4px;background:rgba(123,211,137,.28);font-size:12.5px;font-weight:600}
+  .fn .row{display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:12px;border-top:1px dashed rgba(31,58,38,.3)}
+  .pin{border:0;background:none;display:flex;align-items:center;gap:6px;font:700 13px var(--d);color:var(--ink);padding:4px 6px;border-radius:6px}
+  .pin:hover{background:rgba(255,194,71,.3)}
+  .pin[aria-pressed="true"]{color:#B7791F}
+  .pin[aria-pressed="true"] svg{fill:#FFC247}
+
+  /* specimen drawer */
+  .drawer{position:fixed;top:0;right:0;bottom:0;z-index:20;width:min(440px,100vw);padding:30px;background:var(--paper);color:var(--ink);transform:translateX(105%);
+    transition:transform .45s cubic-bezier(.16,1,.3,1);box-shadow:-30px 0 60px rgba(0,0,0,.4);overflow:auto}
+  .drawer.open{transform:none}
+  .scrim{position:fixed;inset:0;z-index:19;background:rgba(5,16,10,.5);opacity:0;pointer-events:none;transition:opacity .3s}
+  .scrim.open{opacity:1;pointer-events:auto}
+  .drawer h2{margin:6px 0 4px;font:800 30px/1.1 var(--d)}
+  .drawer .close{position:absolute;top:18px;right:18px;border:0;background:rgba(31,58,38,.08);width:38px;height:38px;border-radius:50%;font-size:18px}
+  .spec{display:grid;grid-template-columns:120px 1fr;gap:10px 14px;margin:22px 0;font-size:14.5px}
+  .spec dt{font:600 18px/1.1 var(--hand);color:var(--bark)}
+  .spec dd{margin:0}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:46px;padding:0 22px;border:0;border-radius:99px;background:var(--fly);color:var(--jungle);font:800 15px var(--d);transition:transform .15s,background .2s}
+  .btn:hover{background:#FFD36E}
+  .btn:active{transform:scale(.97)}
+  .btn.ghost{background:transparent;border:1.5px solid currentColor;color:var(--paper)}
+  .drawer .btn.ghost,.journal .btn.ghost{color:var(--ink)}
+  .btn.ghost:hover{background:rgba(255,194,71,.15)}
+  .btn:disabled{opacity:.5;cursor:default}
+
+  /* scout camps (sources) */
+  .camps{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:18px}
+  .camp{position:relative;padding:20px;border-radius:18px;background:var(--moss);border:1.5px solid rgba(243,235,211,.12);overflow:hidden}
+  .camp .lantern{position:absolute;top:16px;right:18px;width:26px;height:34px}
+  .camp .lantern .flame{transform-origin:50% 100%;animation:flick 1.8s ease-in-out infinite}
+  .camp.failed .lantern .flame{display:none}
+  .camp.waiting .lantern .flame{animation:flick .5s steps(2) infinite;opacity:.6}
+  @keyframes flick{50%{transform:scaleY(.8) scaleX(1.1)}}
+  .camp h3{margin:0 40px 4px 0;font:800 17px/1.2 var(--d)}
+  .camp .kind{font:600 17px/1 var(--hand);color:var(--leaf)}
+  .camp .nums{display:flex;gap:18px;margin:16px 0 10px}
+  .camp .nums b{display:block;font:600 22px var(--mono)}
+  .camp .nums span{font-size:12px;color:var(--dim)}
+  .camp .st{font-size:13px;color:var(--dim)}
+  .camp.failed{border-color:rgba(228,87,46,.5)}
+  .camp.failed .st{color:#FF9A7A}
+  .camp .fix{margin-top:10px;height:36px;padding:0 14px;border-radius:99px;border:1.5px solid var(--fly);background:none;color:var(--fly);font-weight:700;font-size:13px}
+
+  /* explorer passport (profile) */
+  .passport{display:grid;grid-template-columns:1fr 1fr;max-width:980px;margin:0 auto;border-radius:10px;overflow:hidden;box-shadow:0 30px 60px rgba(0,0,0,.4)}
+  .passport>div{padding:34px;min-height:520px}
+  .pp-left{background:var(--moss-2);position:relative}
+  .pp-left::after{content:"";position:absolute;top:0;right:0;bottom:0;width:18px;background:linear-gradient(90deg,transparent,rgba(0,0,0,.25))}
+  .pp-right{background:var(--paper);color:var(--ink)}
+  .pp-photo{width:110px;height:130px;border-radius:8px;display:grid;place-items:center;background:var(--leaf);color:var(--jungle);font:800 44px var(--d);margin-bottom:18px}
+  .pp-left h2{margin:0;font:800 30px/1.05 var(--d)}
+  .pp-left dl{display:grid;grid-template-columns:110px 1fr;gap:10px;margin:22px 0 0;font-size:14.5px}
+  .pp-left dt{color:var(--dim);font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;padding-top:2px}
+  .pp-left dd{margin:0}
+  .pp-right h3{margin:0 0 14px;font:800 18px var(--d)}
+  .stamps{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:28px}
+  .stamp{padding:10px 14px;border:2.5px solid var(--c,#2f7d4a);color:var(--c,#2f7d4a);border-radius:8px;font:800 13px/1.1 var(--d);text-transform:uppercase;letter-spacing:.06em;
+    transform:rotate(var(--r,-3deg));opacity:.9;mix-blend-mode:multiply}
+  .signs{display:grid;gap:10px}
+  .sign{display:flex;align-items:center;gap:12px;padding:12px 14px;background:#fff7e6;border-left:0;border-radius:8px;font-size:14.5px}
+  .sign svg{flex:none}
+  .mrz{margin-top:26px;font:13px/1.5 var(--mono);color:#7d8a74;letter-spacing:.15em;word-break:break-all}
+
+  /* ---------- sign in / sign up ---------- */
+  .gate{min-height:100vh;display:grid;grid-template-columns:1fr 460px;align-items:center;padding:40px 6vw;gap:40px}
+  .gate .hero h1{margin:0;font:800 clamp(44px,6vw,84px)/.95 var(--d);letter-spacing:-.04em;max-width:10ch}
+  .gate .hero h1 span{color:var(--fly)}
+  .gate .hero p{font:600 26px/1.2 var(--hand);color:var(--leaf);margin:18px 0 0}
+  .board{position:relative;padding:34px 32px 30px;border-radius:14px;background:linear-gradient(180deg,#7a5536,#5e3f27);color:var(--paper);
+    box-shadow:inset 0 2px 0 rgba(255,255,255,.12),inset 0 -6px 0 rgba(0,0,0,.2),0 30px 60px rgba(0,0,0,.45)}
+  .board::before{content:"";position:absolute;inset:0;border-radius:14px;opacity:.25;pointer-events:none;
+    background:repeating-linear-gradient(90deg,transparent 0 60px,rgba(0,0,0,.25) 60px 61px),repeating-linear-gradient(180deg,transparent 0 3px,rgba(255,255,255,.04) 3px 4px)}
+  .board .nail{position:absolute;width:10px;height:10px;border-radius:50%;background:#c9c2b0;box-shadow:inset -2px -2px 0 rgba(0,0,0,.3)}
+  .board h2{position:relative;margin:0 0 4px;font:800 28px/1 var(--d)}
+  .board .sub{position:relative;margin:0 0 22px;font:600 20px/1.1 var(--hand);color:#ffd99a}
+  .field{position:relative;margin-bottom:16px}
+  .field label{display:block;margin-bottom:6px;font-weight:600;font-size:13.5px}
+  .field input{width:100%;height:48px;padding:0 16px;border-radius:10px;border:2px solid transparent;background:var(--paper);color:var(--ink);font:15px var(--d);outline:none;transition:border-color .2s}
+  .field input:focus{border-color:var(--fly)}
+  .field input[aria-invalid="true"]{border-color:var(--red)}
+  .field .err{margin-top:6px;color:#ffcfbf;font-size:13px}
+  .board .btn{width:100%;margin-top:6px}
+  .board .alt{position:relative;margin:18px 0 0;text-align:center;font-size:14px}
+  .board .alt button{border:0;background:none;color:var(--fly);font-weight:700;text-decoration:underline;text-underline-offset:3px}
+  .steps{position:relative;display:flex;gap:8px;margin-bottom:20px}
+  .steps i{flex:1;height:6px;border-radius:6px;background:rgba(243,235,211,.25)}
+  .steps i.on{background:var(--fly)}
+  .rolepick{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+  .rolepick button{padding:8px 12px;border-radius:99px;border:1.5px solid rgba(243,235,211,.4);background:transparent;font-size:13.5px;font-weight:600}
+  .rolepick button[aria-pressed="true"]{background:var(--leaf);color:var(--jungle);border-color:var(--leaf)}
+  .spinner{width:18px;height:18px;border-radius:50%;border:2.5px solid rgba(11,36,24,.3);border-top-color:var(--jungle);animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ---------- loading ---------- */
+  .loader{position:fixed;inset:0;display:grid;place-items:center;text-align:center;z-index:2}
+  .loader h2{margin:0;font:800 34px/1 var(--d)}
+  .loader p{font:600 22px/1.2 var(--hand);color:var(--leaf);margin:10px 0 24px}
+  .vine{width:320px;height:10px;border-radius:10px;background:var(--moss);overflow:hidden;margin:0 auto}
+  .vine b{display:block;height:100%;width:0;border-radius:10px;background:repeating-linear-gradient(90deg,var(--leaf) 0 14px,#5fb56f 14px 18px);transition:width .3s}
+  .loader .steps-list{margin-top:18px;font-size:14px;color:var(--dim);min-height:22px}
+
+  /* ---------- skeleton / empty / error ---------- */
+  .sk{display:block;border-radius:6px;background:linear-gradient(100deg,rgba(31,58,38,.1) 30%,rgba(123,211,137,.3) 50%,rgba(31,58,38,.1) 70%);background-size:300% 100%;animation:sk 1.4s ease-in-out infinite}
+  .dark .sk,.page .sk{background:linear-gradient(100deg,rgba(243,235,211,.06) 30%,rgba(123,211,137,.18) 50%,rgba(243,235,211,.06) 70%);background-size:300% 100%}
+  .fn .sk,.drawer .sk,.pp-right .sk{background:linear-gradient(100deg,rgba(31,58,38,.1) 30%,rgba(123,211,137,.35) 50%,rgba(31,58,38,.1) 70%);background-size:300% 100%}
+  @keyframes sk{from{background-position:100% 0}to{background-position:0 0}}
+  .fn.skel{cursor:default;transform:none}
+  .fn.skel::before{background:#c9c2b0}
+  .empty{display:grid;justify-items:center;text-align:center;padding:60px 20px;gap:10px}
+  .empty h3{margin:10px 0 0;font:800 26px var(--d)}
+  .empty p{margin:0;color:var(--dim);max-width:42ch}
+  .journal .empty p{color:#4d6450}
+  .washout{display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:14px;background:rgba(228,87,46,.14);border:1.5px solid rgba(228,87,46,.5);color:#FFD2C2;margin-bottom:22px}
+  .journal .washout{color:#8a2a10;background:rgba(228,87,46,.12)}
+  .washout b{display:block;font-size:15.5px}
+  .washout .btn{margin-left:auto;height:38px;background:var(--red);color:#fff}
+
+  /* ---------- toasts ---------- */
+  #toasts{position:fixed;right:24px;bottom:80px;z-index:50;display:grid;gap:10px}
+  .toast{display:flex;align-items:center;gap:10px;padding:12px 16px 12px 12px;border-radius:14px;background:var(--paper);color:var(--ink);font-weight:600;box-shadow:0 16px 30px rgba(0,0,0,.35);
+    transform:translateX(120%) rotate(4deg);transition:transform .45s cubic-bezier(.16,1,.3,1)}
+  .toast.in{transform:none}
+  .toast::before{content:"";width:28px;height:28px;flex:none;border-radius:0 50% 0 50%;background:var(--leaf)}
+  .toast.warn::before{background:var(--red)}
+
+  /* ---------- UI kit ---------- */
+  .kit{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:18px}
+  .kit section{padding:22px;border-radius:18px;background:var(--moss)}
+  .kit h3{margin:0 0 14px;font:800 16px var(--d);color:var(--leaf)}
+  .kit .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .switch{position:relative;width:52px;height:30px;border-radius:99px;border:0;background:rgba(243,235,211,.2);transition:background .2s}
+  .switch::after{content:"";position:absolute;top:4px;left:4px;width:22px;height:22px;border-radius:0 50% 0 50%;background:var(--paper);transition:transform .25s cubic-bezier(.16,1,.3,1)}
+  .switch[aria-checked="true"]{background:var(--leaf)}
+  .switch[aria-checked="true"]::after{transform:translateX(22px) rotate(90deg)}
+  .badge{padding:4px 10px;border-radius:99px;font-size:12.5px;font-weight:700}
+  .badge.ok{background:rgba(123,211,137,.25);color:var(--leaf)}
+  .badge.warn{background:rgba(255,194,71,.2);color:var(--fly)}
+  .badge.bad{background:rgba(228,87,46,.2);color:#FF9A7A}
+  .range{width:100%;accent-color:var(--fly)}
+  .modal{position:fixed;inset:0;z-index:30;display:grid;place-items:center;background:rgba(5,16,10,.6)}
+  .modal .board{width:min(420px,92vw)}
+
+  @media (max-width:980px){
+    .trail{height:auto;flex-wrap:wrap;padding:14px 16px;gap:10px}
+    .path{order:3;width:100%;justify-content:space-between}
+    .stop{width:auto;flex:1}
+    .stop small{display:none}
+    body[data-screen="overview"] #world{inset:0 0 auto 0;height:48vh;position:absolute}
+    .journal{margin:48vh 12px 40px;min-height:0;padding:26px 20px}
+    .island-cap{display:none}
+    .tally{grid-template-columns:1fr 1fr}
+    .sightings{grid-template-columns:1fr}
+    .gate{grid-template-columns:1fr;padding:30vh 16px 40px}
+    .passport{grid-template-columns:1fr}
+    .page{padding:10px 16px 120px}
+    .pagehead h1{font-size:38px}
+  }
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-screen="login">
+<div id="world" aria-hidden="true"></div>
+<div id="app"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="lab-core.js"></script>
+<script>
+const { $, $$, esc, fmt, cname, ago, DATA, rand, sprite, glowTex, stage, toast, go, reduce } = Lab;
+const T = THREE;
+
+/* ================= 3D: the floating island ================= */
+let focus = null;
+const W = (() => {
+  const st = stage($('#world'), { cam: new T.Vector3(0, 3.2, 13), look: new T.Vector3(0, 0.4, 0), px: 1.4, py: 0.7, alpha: false });
+  const { scene, camera } = st;
+  scene.background = new T.Color(0x0B2418);
+  scene.fog = new T.FogExp2(0x0B2418, 0.05);
+  scene.add(new T.HemisphereLight(0xd9f0b0, 0x0b2418, 0.85));
+  const sun = new T.DirectionalLight(0xffe2a8, 1.1); sun.position.set(4, 8, 5); scene.add(sun);
+  const island = new T.Group(); scene.add(island);
+  island.add(new T.Mesh(new T.CylinderGeometry(3.1, 2.9, 0.5, 28), new T.MeshStandardMaterial({ color: 0x3f7d33, flatShading: true })));
+  const rg = new T.ConeGeometry(2.95, 3.4, 14, 3); rg.rotateX(Math.PI);
+  const rp = rg.attributes.position; for (let i = 0; i < rp.count; i++) rp.setXYZ(i, rp.getX(i) * (0.85 + rand() * 0.3), rp.getY(i), rp.getZ(i) * (0.85 + rand() * 0.3));
+  rg.computeVertexNormals();
+  const rock = new T.Mesh(rg, new T.MeshStandardMaterial({ color: 0x5b4633, flatShading: true })); rock.position.y = -1.95; island.add(rock);
+  // Waterfall off one edge.
+  const fall = new T.Mesh(new T.PlaneGeometry(0.5, 4.5), new T.MeshBasicMaterial({ color: 0xbfeaff, transparent: true, opacity: 0.45, side: T.DoubleSide }));
+  fall.position.set(2.9, -2.2, 0.6); fall.rotation.y = Math.PI / 2.4; island.add(fall);
+  const greens = [0x2f6b2a, 0x3f8a36, 0x56a043, 0x2a5a2c, 0x6cb04a];
+  for (let i = 0; i < 24; i++) {
+    const a = rand() * 6.283, r = Math.sqrt(rand()) * 2.5, s = 0.55 + rand() * 0.9, tree = new T.Group();
+    const trunk = new T.Mesh(new T.CylinderGeometry(0.06 * s, 0.1 * s, 1.1 * s, 6), new T.MeshStandardMaterial({ color: 0x6b4a2f, flatShading: true })); trunk.position.y = 0.55 * s;
+    const crown = new T.Mesh(i % 3 ? new T.IcosahedronGeometry(0.55 * s, 0) : new T.ConeGeometry(0.5 * s, 1.3 * s, 7), new T.MeshStandardMaterial({ color: greens[i % 5], flatShading: true }));
+    crown.position.y = 1.2 * s; tree.add(trunk, crown); tree.position.set(Math.cos(a) * r, 0.25, Math.sin(a) * r); island.add(tree);
+  }
+  const rows = DATA.byCountry.filter((r) => r.country !== 'unknown'); const mx = Math.max(...rows.map((r) => r.n));
+  const flies = rows.map((r, i) => { const s = sprite(0xFFD25A, 0.22 + 0.5 * r.n / mx); scene.add(s);
+    return { code: r.country, s, base: s.scale.x, a: i / rows.length * 6.283, rad: 3.4 + (i % 3) * 0.6, h: 0.6 + (i % 4) * 0.55, sp: 0.12 + rand() * 0.1 }; });
+  const dust = new T.Points(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute([...Array(600)].map(() => (rand() - 0.5) * 18), 3)),
+    new T.PointsMaterial({ color: 0xFFD27A, size: 0.08, map: glowTex(), transparent: true, depthWrite: false, blending: T.AdditiveBlending }));
+  scene.add(dust);
+  let gather = 0; // 0 = scattered, 1 = fireflies form a ring (loading screen)
+  st.tick((dt, t) => {
+    if (!reduce) { island.rotation.y += dt * 0.08; island.position.y = Math.sin(t * 0.6) * 0.12; dust.rotation.y += dt * 0.02; }
+    flies.forEach((f, i) => {
+      const a = f.a + t * f.sp * (1 + gather * 3);
+      const ring = new T.Vector3(Math.cos(i / flies.length * 6.283 + t) * 2.2, 5 + Math.sin(i / flies.length * 6.283 + t) * 2.2, 0);
+      const free = new T.Vector3(Math.cos(a) * f.rad, f.h + Math.sin(t * 1.3 + f.a) * 0.25, Math.sin(a) * f.rad);
+      f.s.position.lerpVectors(free, ring, gather);
+      f.s.scale.setScalar(f.base * (f.code === focus ? 2.3 : 1 + 0.15 * Math.sin(t * 4 + f.a)));
+      f.s.material.opacity = focus && f.code !== focus ? 0.3 : 1;
+    });
+  });
+  return { setGather(v) { gather = v; camera.position.y = st.base.y; } };
+})();
+
+/* ================= shared chrome ================= */
+const ICONS = {
+  overview: '<path d="M4 20l5-14 4 8 3-5 4 11z"/>',
+  jobs: '<path d="M5 4h11l3 3v13H5z"/><path d="M9 10h6M9 14h6"/>',
+  sources: '<path d="M12 3c3 3 3 6 0 9-3-3-3-6 0-9zM6 21c0-4 3-6 6-6s6 2 6 6"/>',
+  profile: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/>',
+};
+const STOPS = [['overview', 'Base camp', 'the big picture'], ['jobs', 'Field notes', 'every job'], ['sources', 'Scouts', 'where we look'], ['profile', 'Passport', 'about you']];
+const logo = '<svg width="30" height="30" viewBox="0 0 32 32"><path d="M16 3c7 5 9 12 0 26C7 15 9 8 16 3z" fill="#7BD389"/><path d="M16 8v20" stroke="#0B2418" stroke-width="1.6"/><circle cx="24" cy="8" r="3" fill="#FFC247"/></svg>';
+function trail(active) {
+  return '<header class="trail"><div class="logo">' + logo + 'Job Autopilot</div><nav class="path" aria-label="Sections">' +
+    STOPS.map(([k, v, s]) => '<button class="stop" data-go="' + k + '"' + (k === active ? ' aria-current="page"' : '') + '><i><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="1.8">' + ICONS[k] + '</svg></i><span>' + v + '</span><small>' + s + '</small></button>').join('') +
+    '</nav><div class="pack"><button class="avatar" data-go="profile" title="Your passport">' + DATA.profile.first[0] + '</button></div></header>';
+}
+const washout = (what) => '<div class="washout" role="alert"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 18c3-3 6 3 9 0s6 3 9 0M12 3v9"/><circle cx="12" cy="15" r=".5"/></svg><div><b>The trail washed out.</b>We couldn’t reach ' + what + '. Your notes are safe.</div><button class="btn" data-retry>Try again</button></div>';
+const emptyArt = '<svg width="120" height="120" viewBox="0 0 120 120" fill="none"><circle cx="60" cy="60" r="56" fill="#16382A"/><path d="M60 22v10" stroke="#B7C4A6" stroke-width="3"/><rect x="44" y="32" width="32" height="46" rx="10" stroke="#F3EBD3" stroke-width="3"/><path d="M50 78h20v10H50z" fill="#6B4A2F"/><path d="M60 46c5 6 5 12 0 18-5-6-5-12 0-18z" fill="#3a4a3a"/></svg>';
+
+/* ================= screens ================= */
+const S = {};
+S.login = (st) => '<div class="gate"><div class="hero"><h1>Your jobs, <span>found</span> while you sleep.</h1><p>~ the jungle does the looking ~</p></div>' +
+  '<form class="board" id="login" novalidate><i class="nail" style="top:12px;left:12px"></i><i class="nail" style="top:12px;right:12px"></i>' +
+  '<h2>Welcome back, explorer</h2><p class="sub">sign in with your Mailnex login</p>' +
+  '<div class="field"><label for="em">Email</label><input id="em" type="email" autocomplete="username" placeholder="you@example.com"' + (st === 'error' ? ' aria-invalid="true" value="charul@example"' : '') + '>' + (st === 'error' ? '<div class="err">That email and password do not match. Try again, or reset it below.</div>' : '') + '</div>' +
+  '<div class="field"><label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password" placeholder="••••••••"></div>' +
+  '<button class="btn" type="submit"' + (st === 'skeleton' ? ' disabled' : '') + '>' + (st === 'skeleton' ? '<span class="spinner"></span>Checking the map…' : 'Enter the jungle') + '</button>' +
+  '<p class="alt">New here? <button type="button" data-go="signup">Join the expedition</button></p></form></div>';
+
+let step = 1;
+S.signup = (st) => '<div class="gate"><div class="hero"><h1>Pack light. <span>We</span> carry the search.</h1><p>~ three steps and you’re in ~</p></div>' +
+  '<form class="board" id="signup" novalidate><i class="nail" style="top:12px;left:12px"></i><i class="nail" style="top:12px;right:12px"></i>' +
+  '<h2>Join the expedition</h2><p class="sub">step ' + step + ' of 3 — ' + ['who you are', 'what you hunt', 'where you’ll roam'][step - 1] + '</p>' +
+  '<div class="steps">' + [1, 2, 3].map((i) => '<i class="' + (i <= step ? 'on' : '') + '"></i>').join('') + '</div>' +
+  (step === 1 ? '<div class="field"><label for="nm">Your name</label><input id="nm" placeholder="Charul Purohit"></div><div class="field"><label for="em2">Email</label><input id="em2" type="email" placeholder="you@example.com"' + (st === 'error' ? ' aria-invalid="true"' : '') + '>' + (st === 'error' ? '<div class="err">This email already has an account — sign in instead.</div>' : '') + '</div><div class="field"><label for="pw2">Password</label><input id="pw2" type="password" placeholder="At least 10 characters"></div>'
+    : step === 2 ? '<div class="field"><label>Roles to hunt</label></div><div class="rolepick">' + DATA.profile.roles.map((r, i) => '<button type="button" aria-pressed="' + (i < 3) + '">' + r + '</button>').join('') + '</div><div class="field"><label for="up">Or drop your resume</label><input id="up" type="file"></div>'
+    : '<div class="rolepick">' + ['India', 'Europe', 'UK', 'Singapore', 'Middle East', 'Remote'].map((r, i) => '<button type="button" aria-pressed="' + (i !== 4) + '">' + r + '</button>').join('') + '</div>') +
+  '<button class="btn" type="submit">' + (step < 3 ? 'Next' : 'Start the hunt') + '</button>' +
+  '<p class="alt">' + (step > 1 ? '<button type="button" data-back>Back</button> · ' : '') + 'Have an account? <button type="button" data-go="login">Sign in</button></p></form></div>';
+
+S.loading = () => '<div class="loader"><div style="margin-top:62vh"><h2>Gathering fireflies…</h2><p>checking 29 trails for new roles</p><div class="vine"><b id="vine"></b></div><div class="steps-list" id="ld">Waking the scouts</div></div></div>';
+
+S.overview = (st) => {
+  const t = DATA.totals, mx = Math.max(...DATA.byCountry.map((r) => r.n));
+  const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  let body;
+  if (st === 'skeleton') body = '<span class="sk" style="height:42px;width:70%"></span><span class="sk" style="height:18px;width:90%;margin:18px 0 8px"></span><span class="sk" style="height:18px;width:60%;margin-bottom:26px"></span><div class="tally">' + '<div><span class="sk" style="height:30px;width:60%"></span></div>'.repeat(4) + '</div>' + '<span class="sk" style="height:34px;margin-bottom:10px"></span>'.repeat(6);
+  else if (st === 'empty') body = '<h1>A quiet morning.</h1><div class="empty">' + emptyArt + '<h3>No sightings yet</h3><p>Your scouts haven’t reported in. The first hunt runs tonight — or send them out now.</p><button class="btn" data-toast="Scouts sent out. Check back in 10 minutes.">Send the scouts</button></div>';
+  else body = (st === 'error' ? washout('the job pool') : '') +
+    '<h1>Good morning, ' + DATA.profile.first + '.</h1><p class="lead">The scouts came back with <mark><b>' + t.today + ' new roles</b></mark> in your line of work. ' + fmt(t.jobs) + ' are in your journal, picked from ' + fmt(t.pool) + ' they saw.</p>' +
+    '<div class="tally"><div><b>' + t.jobs + '</b><span>your kind of role</span></div><div><b>' + fmt(t.pool) + '</b><span>all roles seen</span></div><div><b>' + t.companies + '</b><span>companies</span></div><div><b>' + t.countries + '</b><span>countries</span></div></div>' +
+    '<div class="sect"><h2>Sightings by country</h2><em>hover to call the firefly</em></div><div class="sightings">' +
+    DATA.byCountry.map((r) => '<button class="sight" data-code="' + r.country + '"><span>' + cname(r.country) + '</span><b>' + r.n + '</b><span class="marks">' + '<i></i>'.repeat(r.n) + '</span></button>').join('') + '</div>' +
+    '<div class="sect"><h2>The last fourteen days</h2><em>each hill is a day</em></div><div class="trailchart">' + DATA.daily.map((n) => '<span class="' + (n ? '' : 'zero') + '" data-n="' + n + '" style="height:' + Math.max(4, n / 26 * 100) + '%"></span>').join('') + '</div>' +
+    '<p class="note">→ Most sightings came on the 25th. Ask the scouts to watch Naukri too.</p>';
+  return trail('overview') + '<div class="island-cap">Every firefly is a country.<small>The bigger it glows, the more jobs are waiting there. Drag your mouse to look around the island.</small></div>' +
+    '<article class="journal"><div class="date">' + today + '</div>' + body + '</article>';
+};
+
+let filter = 'all', pinned = new Set([2]);
+S.jobs = (st) => {
+  const list = DATA.jobs.filter((j) => filter === 'all' || (filter === 'remote' ? j.remote : filter === 'today' ? j.h < 24 : pinned.has(j.id)));
+  let cards;
+  if (st === 'skeleton') cards = '<div class="notes">' + [...Array(6)].map((_, i) => '<div class="fn skel" style="--r:' + (i % 2 ? 1 : -1) + 'deg"><span class="sk" style="height:22px;width:75%"></span><span class="sk" style="height:18px;width:40%;margin:10px 0 18px"></span><span class="sk" style="height:14px;width:90%;margin-bottom:8px"></span><span class="sk" style="height:14px;width:60%"></span></div>').join('') + '</div>';
+  else if (st === 'empty' || !list.length) cards = '<div class="empty">' + emptyArt + '<h3>' + (filter === 'pinned' ? 'Nothing pinned yet' : 'No field notes match') + '</h3><p>' + (filter === 'pinned' ? 'Pin a note and it’ll wait for you here.' : 'Try a wider trail — clear the search or switch to “All notes”.') + '</p><button class="btn ghost" data-filter="all">Show all notes</button></div>';
+  else cards = '<div class="notes">' + list.map((j, i) => '<article class="fn" style="--r:' + ((i * 37) % 5 - 2) + 'deg" data-job="' + j.id + '"><span class="fit" title="How well it fits">' + j.fit + '</span><h3>' + esc(j.title) + '</h3><div class="co">' + esc(j.company) + '</div>' +
+    '<div class="meta"><span>' + esc(j.loc) + '</span><span>' + (j.pay ? esc(j.pay) : 'Pay not stated') + '</span><span>' + ago(j.h) + '</span></div><div class="tags">' + j.tags.map((t) => '<span>' + esc(t) + '</span>').join('') + (j.remote ? '<span>Remote</span>' : '') + '</div>' +
+    '<div class="row"><small style="color:#6b7a66">via ' + j.src + '</small><button class="pin" data-pin="' + j.id + '" aria-pressed="' + pinned.has(j.id) + '"><svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg>' + (pinned.has(j.id) ? 'Pinned' : 'Pin') + '</button></div></article>').join('') + '</div>';
+  return trail('jobs') + '<main class="page"><div class="pagehead"><div><h1>Field notes</h1><p>' + DATA.totals.jobs + ' roles that match you, newest first.</p></div><span class="scrib">~ click a note to open it ~</span></div>' +
+    (st === 'error' ? washout('your field notes') : '') +
+    '<div class="filters"><input class="search" placeholder="Search a title or company" aria-label="Search">' +
+    [['all', 'All notes'], ['today', 'Found today'], ['remote', 'Remote'], ['pinned', 'Pinned (' + pinned.size + ')']].map(([k, v]) => '<button class="chip" data-filter="' + k + '" aria-pressed="' + (filter === k) + '">' + v + '</button>').join('') + '</div>' + cards +
+    '</main><div class="scrim" id="scrim"></div><aside class="drawer" id="drawer" aria-label="Job details"></aside>';
+};
+
+S.sources = (st) => {
+  const lantern = '<svg class="lantern" viewBox="0 0 26 34"><rect x="5" y="6" width="16" height="22" rx="5" fill="none" stroke="#F3EBD3" stroke-width="2"/><path d="M9 2h8M13 2v4M7 28h12v4H7z" stroke="#F3EBD3" stroke-width="2" fill="#6B4A2F"/><path class="flame" d="M13 11c3 4 3 7 0 10-3-3-3-6 0-10z" fill="#FFC247"/></svg>';
+  let body;
+  if (st === 'skeleton') body = '<div class="camps">' + '<div class="camp"><span class="sk" style="height:20px;width:70%"></span><span class="sk" style="height:16px;width:30%;margin:10px 0 20px"></span><span class="sk" style="height:40px"></span></div>'.repeat(6) + '</div>';
+  else if (st === 'empty') body = '<div class="empty">' + emptyArt + '<h3>No scouts yet</h3><p>Add a place to look — a job board, a company page or your job-alert email.</p><button class="btn" data-toast="Scout added: Greenhouse · Wise">Add a scout</button></div>';
+  else body = (st === 'error' ? washout('the scout camps') : '') + '<div class="camps">' + DATA.sources.map((s) => '<div class="camp ' + s.ok + '">' + lantern + '<h3>' + esc(s.name) + '</h3><div class="kind">' + s.kind + '</div>' +
+    '<div class="nums"><div><b>' + fmt(s.seen) + '</b><span>seen</span></div><div><b>' + s.kept + '</b><span>kept for you</span></div></div>' +
+    '<div class="st">' + (s.ok === 'ok' ? 'Lantern lit · reported ' + ago(s.h) : s.ok === 'failed' ? 'Lantern out · ' + s.note : 'Waiting · ' + s.note) + '</div>' +
+    (s.ok !== 'ok' ? '<button class="fix" data-toast="' + (s.ok === 'failed' ? 'We’ll ask you to sign in to Naukri again.' : 'Paste your Adzuna key in Settings.') + '">' + (s.ok === 'failed' ? 'Relight it' : 'Add the key') + '</button>' : '') + '</div>').join('') + '</div>';
+  return trail('sources') + '<main class="page"><div class="pagehead"><div><h1>Scout camps</h1><p>Every place Autopilot looks. A lit lantern means it reported in.</p></div><span class="scrib">7 lit · 1 out · 1 waiting</span></div>' + body + '</main>';
+};
+
+S.profile = (st) => {
+  const p = DATA.profile;
+  if (st === 'skeleton') return trail('profile') + '<main class="page"><div class="passport"><div class="pp-left"><span class="sk" style="width:110px;height:130px;margin-bottom:18px"></span><span class="sk" style="height:30px;width:70%"></span>' + '<span class="sk" style="height:16px;margin-top:16px"></span>'.repeat(5) + '</div><div class="pp-right">' + '<span class="sk" style="height:40px;margin-bottom:12px;background-size:300% 100%"></span>'.repeat(5) + '</div></div></main>';
+  if (st === 'empty') return trail('profile') + '<main class="page"><div class="empty">' + emptyArt + '<h3>Your passport is blank</h3><p>Upload your resume and Autopilot fills it in — roles, level and the jobs to skip.</p><button class="btn" data-toast="Reading your resume…">Upload resume</button></div></main>';
+  const colors = ['#2f7d4a', '#B7791F', '#1f5f7a', '#8a3b12', '#2f7d4a', '#5a6b1f'];
+  return trail('profile') + '<main class="page"><div class="pagehead"><div><h1>Explorer passport</h1><p>Read from your resume ' + ago(50) + '. Autopilot hunts with these rules.</p></div></div>' + (st === 'error' ? washout('your passport') : '') +
+    '<div class="passport"><div class="pp-left"><div class="pp-photo">' + p.first[0] + '</div><h2>' + esc(p.name) + '</h2>' +
+    '<dl><dt>Based in</dt><dd>' + p.city + '</dd><dt>Level</dt><dd>' + p.level + ' · ' + p.years + ' years</dd><dt>Degree</dt><dd>' + p.degree + '</dd><dt>Salary floor</dt><dd>None set <button class="chip" style="padding:3px 10px;margin-left:6px" data-modal>Set one</button></dd><dt>Email</dt><dd>' + p.email + '</dd></dl>' +
+    '<p class="mrz">P&lt;IND' + p.name.toUpperCase().replace(' ', '&lt;&lt;') + '&lt;&lt;&lt;&lt;&lt;&lt;<br>BA2024&lt;&lt;JDH&lt;&lt;' + p.years + 'YRS&lt;&lt;&lt;&lt;</p></div>' +
+    '<div class="pp-right"><h3>Visas granted — roles you hunt</h3><div class="stamps">' + p.roles.map((r, i) => '<span class="stamp" style="--c:' + colors[i] + ';--r:' + ((i * 7) % 9 - 4) + 'deg">' + r + '</span>').join('') + '</div>' +
+    '<h3>No-go zones — skip a job when</h3><div class="signs">' +
+    ['It asks for more than <b>' + p.skipYears + ' years</b>', 'It demands a <b>' + p.skipDegrees.join(', ') + '</b>', 'It’s from <b>' + p.never[0] + '</b>'].map((s) => '<div class="sign"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#E4572E"/><path d="M7 12h10" stroke="#fff" stroke-width="3"/></svg><span>' + s + '</span></div>').join('') + '</div></div></div></main>';
+};
+
+S.kit = () => trail('') + '<main class="page"><div class="pagehead"><div><h1>UI kit</h1><p>Every part Canopy is built from.</p></div></div><div class="kit">' +
+  '<section><h3>Buttons</h3><div class="row"><button class="btn">Primary</button><button class="btn ghost">Ghost</button><button class="btn" disabled>Disabled</button><button class="btn"><span class="spinner"></span>Loading</button></div></section>' +
+  '<section><h3>Inputs</h3><div class="field"><label>Default</label><input placeholder="Type here"></div><div class="field"><label>Error</label><input aria-invalid="true" value="bad@"><div class="err" style="color:#FF9A7A">Check the email.</div></div></section>' +
+  '<section><h3>Chips, badges &amp; toggle</h3><div class="row"><button class="chip" aria-pressed="true">Selected</button><button class="chip">Chip</button><span class="badge ok">Worked</span><span class="badge warn">Waiting</span><span class="badge bad">Failed</span><button class="switch" role="switch" aria-checked="true" aria-label="Toggle"></button></div></section>' +
+  '<section><h3>Toasts &amp; dialog</h3><div class="row"><button class="btn" data-toast="Pinned to your journal">Show toast</button><button class="btn ghost" data-toast-warn="Naukri lantern went out">Warning toast</button><button class="btn ghost" data-modal>Open dialog</button></div></section>' +
+  '<section><h3>Slider</h3><label style="font-size:13px">Minimum fit score · 70</label><input class="range" type="range" value="70"></section>' +
+  '<section><h3>Skeleton</h3><span class="sk" style="height:18px;width:80%;margin-bottom:8px"></span><span class="sk" style="height:18px;width:55%;margin-bottom:8px"></span><span class="sk" style="height:60px"></span></section>' +
+  '</div></main>';
+
+/* ================= behaviour ================= */
+let loadTimer = null;
+function show(screen, st) {
+  document.body.dataset.screen = screen;
+  clearInterval(loadTimer); W.setGather(0);
+  $('#app').innerHTML = S[screen](st);
+  if (screen === 'loading') {
+    W.setGather(1); let p = 0; const msgs = ['Waking the scouts', 'Reading job-alert emails', 'Walking 14 company trails', 'Throwing out old adverts', 'Matching roles to you'];
+    loadTimer = setInterval(() => { p = Math.min(100, p + 4 + Math.random() * 8); $('#vine').style.width = p + '%'; $('#ld').textContent = msgs[Math.min(4, Math.floor(p / 21))] + '…';
+      if (p >= 100) { clearInterval(loadTimer); setTimeout(() => go('overview'), 500); } }, 260);
+  }
+}
+document.addEventListener('click', (e) => {
+  const g = e.target.closest('[data-go]'); if (g) { if (g.dataset.go === 'signup') step = 1; return go(g.dataset.go); }
+  const t = e.target.closest('[data-toast]'); if (t) return toast(t.dataset.toast);
+  const tw = e.target.closest('[data-toast-warn]'); if (tw) return toast(tw.dataset.toastWarn, 'warn');
+  if (e.target.closest('[data-retry]')) return go(Lab.current.screen, 'skeleton'), setTimeout(() => go(Lab.current.screen, 'ok'), 1400);
+  const f = e.target.closest('[data-filter]'); if (f) { filter = f.dataset.filter; return go('jobs', 'ok'); }
+  const pin = e.target.closest('[data-pin]'); if (pin) { e.stopPropagation(); const id = +pin.dataset.pin;
+    pinned.has(id) ? pinned.delete(id) : pinned.add(id); toast(pinned.has(id) ? 'Pinned to your journal' : 'Unpinned'); return go('jobs', Lab.current.state); }
+  const card = e.target.closest('[data-job]'); if (card) return openJob(+card.dataset.job);
+  if (e.target.closest('#scrim,.drawer .close')) return closeJob();
+  if (e.target.closest('[data-back]')) { step--; return go('signup'); }
+  if (e.target.closest('[data-modal]')) return openModal();
+  const rp = e.target.closest('.rolepick button'); if (rp) rp.setAttribute('aria-pressed', String(rp.getAttribute('aria-pressed') !== 'true'));
+  const sw = e.target.closest('.switch'); if (sw) sw.setAttribute('aria-checked', String(sw.getAttribute('aria-checked') !== 'true'));
+  if (e.target.closest('.modal [data-close]') || e.target.classList.contains('modal')) $('.modal')?.remove();
+});
+document.addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (e.target.id === 'login') { go('login', 'skeleton'); setTimeout(() => go('loading'), 900); }
+  if (e.target.id === 'signup') { if (step < 3) { step++; go('signup'); } else { toast('Welcome aboard, explorer!'); go('loading'); } }
+});
+document.addEventListener('pointerover', (e) => { const s = e.target.closest('.sight'); focus = s ? s.dataset.code : null; });
+function openJob(id) {
+  const j = DATA.jobs.find((x) => x.id === id);
+  $('#drawer').innerHTML = '<button class="close" aria-label="Close">×</button><div class="date">specimen #' + j.id + '</div><h2>' + esc(j.title) + '</h2><div class="co" style="font:600 22px var(--hand);color:var(--bark)">' + esc(j.company) + '</div>' +
+    '<dl class="spec"><dt>Where</dt><dd>' + esc(j.loc) + '</dd><dt>Pay</dt><dd>' + (j.pay || 'Not stated') + '</dd><dt>Found</dt><dd>' + ago(j.h) + ' via ' + j.src + '</dd><dt>Fit</dt><dd><b>' + j.fit + '/100</b> — matches your roles and level</dd><dt>Skills</dt><dd>' + j.tags.join(', ') + '</dd></dl>' +
+    '<p style="font-size:14.5px">Phase 1 only finds jobs. Open the advert to apply yourself.</p><div style="display:flex;gap:10px;margin-top:20px"><button class="btn" data-toast="Opening the advert in a new tab">Open advert</button><button class="btn ghost" data-pin="' + j.id + '">' + (pinned.has(j.id) ? 'Unpin' : 'Pin') + '</button></div>';
+  $('#drawer').classList.add('open'); $('#scrim').classList.add('open');
+}
+function closeJob() { $('#drawer')?.classList.remove('open'); $('#scrim')?.classList.remove('open'); }
+function openModal() {
+  const m = document.createElement('div'); m.className = 'modal';
+  m.innerHTML = '<div class="board" role="dialog" aria-label="Set a salary floor"><h2>Set a salary floor</h2><p class="sub">jobs paying less are skipped</p><div class="field"><label for="sf">Minimum yearly pay (₹ LPA)</label><input id="sf" type="number" placeholder="8"></div><div style="display:flex;gap:10px"><button class="btn" data-close data-toast="Salary floor saved">Save</button><button class="btn ghost" data-close>Cancel</button></div></div>';
+  document.body.appendChild(m);
+}
+addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeJob(); $('.modal')?.remove(); } });
+Lab.start({ show });
+</script>
+</body>
+</html>

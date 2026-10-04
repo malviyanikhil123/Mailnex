@@ -1,0 +1,1 @@
+window.AUTOPILOT_API = "${VITE_API_URL}" || "${API_URL}" || "";

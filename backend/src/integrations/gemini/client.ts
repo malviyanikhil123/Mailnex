@@ -18,11 +18,14 @@
  * In production it defaults to constructing the real GoogleGenerativeAI client.
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
 import { interpolate } from "../../utils/interpolate.js";
 import { logger } from "../../utils/logger.js";
 import { buildPersonalizationPrompt } from "./prompt.js";
+import { defaultModelFactory, type ModelFactory } from "./model-factory.js";
+
+export { defaultModelFactory, CANDIDATE_MODELS } from "./model-factory.js";
+export type { ModelFactory, GenerativeModelLike } from "./model-factory.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,15 +49,6 @@ export interface PersonalizeResult {
   aiUsed: boolean;
 }
 
-/** Minimal interface for the generative model — matches GoogleGenerativeAI's
- *  GenerativeModel.generateContent signature. */
-export interface GenerativeModelLike {
-  generateContent(prompt: string): Promise<{ response: { text: () => string } }>;
-}
-
-/** Factory function type: given an API key, returns a model-like object. */
-export type ModelFactory = (apiKey: string) => GenerativeModelLike;
-
 // ---------------------------------------------------------------------------
 // Zod schema for validating model JSON output
 // ---------------------------------------------------------------------------
@@ -63,35 +57,6 @@ const personalizationSchema = z.object({
   subject: z.string().trim().min(1),
   body: z.string().trim().min(1),
 });
-
-const CANDIDATE_MODELS = [
-  "gemini-3.5-flash-lite",
-  "gemini-3.6-flash",
-  "gemini-flash-latest",
-];
-
-function defaultModelFactory(apiKey: string): GenerativeModelLike {
-  const client = new GoogleGenerativeAI(apiKey);
-  return {
-    async generateContent(prompt: string) {
-      let lastError: unknown;
-      for (const modelName of CANDIDATE_MODELS) {
-        try {
-          const model = client.getGenerativeModel({ model: modelName });
-          const res = await model.generateContent(prompt);
-          return res;
-        } catch (err: any) {
-          lastError = err;
-          logger.warn(
-            { model: modelName, error: err?.message || String(err) },
-            "Gemini model failed, attempting next fallback model",
-          );
-        }
-      }
-      throw lastError;
-    },
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Interpolation helper

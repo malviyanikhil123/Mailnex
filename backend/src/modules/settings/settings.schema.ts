@@ -22,7 +22,7 @@ export const candidateProfileSchema = z.object({
   email: z.string().optional(),
   role: z.string().optional(),
   experience: z.string().optional(),
-  skills: z.array(z.string()).optional(),
+  skills: z.union([z.string(), z.array(z.string())]).optional(),
   linkedin: z.string().optional(),
   github: z.string().optional(),
   portfolio: z.string().optional(),

@@ -6,6 +6,9 @@ import { appSettings } from "../../db/schema/settings.js";
 import { campaignSettings } from "../../db/schema/campaign.js";
 import { emailTemplates } from "../../db/schema/templates.js";
 import { TEMPLATE_SEED } from "../../db/seed/templates.js";
+import { inboxSyncState } from "../../db/schema/inbox.js";
+import { inboxService } from "../inbox/inbox.service.js";
+import { logger } from "../../utils/logger.js";
 import type { AuthRepo } from "./auth.repo.js";
 
 // Fixed dummy hash used to equalize timing when a user is not found.
@@ -42,6 +45,15 @@ export class AuthService {
     // Seed default templates for the new user (all deselected by default)
     const templateRows = TEMPLATE_SEED.map((t) => ({ ...t, userId: user.id, active: false }));
     await db.insert(emailTemplates).values(templateRows).onConflictDoNothing();
+
+    // Inbox Sorter: suggested categories + their starter rules, and the sync cursor.
+    // Registration must still succeed if this fails — the user can seed from the UI.
+    await db.insert(inboxSyncState).values({ userId: user.id }).onConflictDoNothing();
+    try {
+      await inboxService.seedDefaultCategories(user.id);
+    } catch (err) {
+      logger.warn({ err, userId: user.id }, "could not seed suggested inbox categories at registration");
+    }
 
     return this.issue(user);
   }
