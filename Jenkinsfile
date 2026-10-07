@@ -4,7 +4,7 @@ pipeline {
     parameters {
         choice(
             name: 'SERVICE',
-            choices: ['BACKEND', 'FRONTEND', 'JOB_AUTOPILOT_FRONTEND', 'ALL'],
+            choices: ['BACKEND', 'FRONTEND', 'BOTH'],
             description: 'Select which service to deploy'
         )
     }
@@ -12,7 +12,6 @@ pipeline {
     environment {
         IMAGE_API          = "nikhilmalviya80/mailnex-api:latest"
         IMAGE_UI           = "nikhilmalviya80/mailnex-ui:latest"
-        IMAGE_AUTOPILOT_UI = "nikhilmalviya80/job-autopilot-ui:latest"
 
         COMPOSE_FILE = "/home/nikhil_malviya/docker/Mailex/docker-compose.yml"
     }
@@ -53,7 +52,7 @@ pipeline {
             steps {
                 script {
 
-                    if (params.SERVICE == 'BACKEND' || params.SERVICE == 'ALL' || params.SERVICE == 'BOTH') {
+                    if (params.SERVICE == 'BACKEND' || params.SERVICE == 'BOTH') {
 
                         echo "========== Building Mailnex Backend =========="
 
@@ -65,7 +64,7 @@ pipeline {
                         }
                     }
 
-                    if (params.SERVICE == 'FRONTEND' || params.SERVICE == 'ALL' || params.SERVICE == 'BOTH') {
+                    if (params.SERVICE == 'FRONTEND' || params.SERVICE == 'BOTH') {
 
                         echo "========== Building Mailnex Frontend =========="
 
@@ -73,18 +72,6 @@ pipeline {
                             sh """
                                 docker build --no-cache -t ${IMAGE_UI} .
                                 docker push ${IMAGE_UI}
-                            """
-                        }
-                    }
-
-                    if (params.SERVICE == 'JOB_AUTOPILOT_FRONTEND' || params.SERVICE == 'ALL' || params.SERVICE == 'BOTH') {
-
-                        echo "========== Building Job Autopilot Frontend =========="
-
-                        dir('job-autopilot-frontend') {
-                            sh """
-                                docker build --no-cache -t ${IMAGE_AUTOPILOT_UI} .
-                                docker push ${IMAGE_AUTOPILOT_UI}
                             """
                         }
                     }
@@ -96,7 +83,7 @@ pipeline {
             steps {
                 script {
 
-                    if (params.SERVICE == 'BACKEND' || params.SERVICE == 'ALL' || params.SERVICE == 'BOTH') {
+                    if (params.SERVICE == 'BACKEND' || params.SERVICE == 'BOTH') {
 
                         echo "========== Deploying Mailnex Backend =========="
 
@@ -106,23 +93,13 @@ pipeline {
                         """
                     }
 
-                    if (params.SERVICE == 'FRONTEND' || params.SERVICE == 'ALL' || params.SERVICE == 'BOTH') {
+                    if (params.SERVICE == 'FRONTEND' || params.SERVICE == 'BOTH') {
 
                         echo "========== Deploying Mailnex Frontend =========="
 
                         sh """
                             docker-compose -f ${COMPOSE_FILE} pull mailnex-ui
                             docker-compose -f ${COMPOSE_FILE} up -d --no-deps --force-recreate mailnex-ui
-                        """
-                    }
-
-                    if (params.SERVICE == 'JOB_AUTOPILOT_FRONTEND' || params.SERVICE == 'ALL' || params.SERVICE == 'BOTH') {
-
-                        echo "========== Deploying Job Autopilot Frontend =========="
-
-                        sh """
-                            docker-compose -f ${COMPOSE_FILE} pull job-autopilot-ui
-                            docker-compose -f ${COMPOSE_FILE} up -d --no-deps --force-recreate job-autopilot-ui
                         """
                     }
                 }
