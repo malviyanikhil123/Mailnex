@@ -34,6 +34,7 @@ const FRONT_PORT = Number(process.env.FRONT_PORT ?? 6003);
  * Only localhost is ever allowed — this is a development convenience, not an open door.
  */
 const TRUSTED = new Set([
+  "https://jobautopiolet.nikhilmalviya.online",
   `http://localhost:${FRONT_PORT}`, `http://127.0.0.1:${FRONT_PORT}`,
   `http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`,
   `http://localhost:6001`, `http://127.0.0.1:6001`,

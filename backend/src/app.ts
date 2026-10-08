@@ -4,7 +4,6 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import jwt from "@fastify/jwt";
 import multipart from "@fastify/multipart";
-import fastifyExpress from "@fastify/express";
 import { env } from "./config/env.js";
 import { registerErrorHandler } from "./middleware/error-handler.js";
 import { autopilotApp } from "./autopilot/web/server.js";
@@ -19,18 +18,19 @@ import { inboxRoutes } from "./modules/inbox/inbox.routes.js";
 
 export async function buildApp() {
   const app = Fastify({ logger: false });
-  await app.register(fastifyExpress);
-
   // Mount Job Autopilot Express handlers for its endpoints (/api/*, /approve/*, /config.js)
-  app.use((req, res, next) => {
+  app.addHook("onRequest", (req, reply, done) => {
+    const url = req.raw.url ?? "";
     if (
-      req.url?.startsWith("/api") ||
-      req.url?.startsWith("/approve") ||
-      req.url === "/config.js"
+      url.startsWith("/api") ||
+      url.startsWith("/approve") ||
+      url === "/config.js"
     ) {
-      return autopilotApp(req, res, next);
+      reply.hijack();
+      autopilotApp(req.raw, reply.raw);
+      return;
     }
-    next();
+    done();
   });
 
   await app.register(helmet, { contentSecurityPolicy: false });
