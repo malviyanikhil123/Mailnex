@@ -151,8 +151,10 @@ export class ContactsRepo {
         duplicateRows: contactsImports.duplicateRows,
         invalidRows: contactsImports.invalidRows,
         createdAt: contactsImports.createdAt,
-        contactCount: sql<number>`(select count(*)::int from ${contacts} where ${contacts.importId} = ${contactsImports.id})`,
-        pendingCount: sql<number>`(select count(*)::int from ${contacts} where ${contacts.importId} = ${contactsImports.id} and ${contacts.status} = 'PENDING')`,
+        // Columns are spelled out with table names: drizzle renders them unqualified here,
+        // and a bare "id" inside the subquery would resolve to contacts.id.
+        contactCount: sql<number>`(select count(*)::int from "contacts" c where c."import_id" = "contacts_imports"."id")`,
+        pendingCount: sql<number>`(select count(*)::int from "contacts" c where c."import_id" = "contacts_imports"."id" and c."status" = 'PENDING')`,
       })
       .from(contactsImports)
       .where(eq(contactsImports.userId, userId))
