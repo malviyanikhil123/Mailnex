@@ -11,16 +11,20 @@ export default function Contacts() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [importId, setImportId] = useState("");
+  const [importName, setImportName] = useState("");
   const [page, setPage] = useState(1);
   const [progress, setProgress] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const limit = 20;
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["contacts", search, status, page],
-    queryFn: () => contactsApi.list({ search, status: status || undefined, page, limit }),
+    queryKey: ["contacts", search, status, importId, page],
+    queryFn: () =>
+      contactsApi.list({ search, status: status || undefined, importId: importId ? +importId : undefined, page, limit }),
     refetchInterval: 4000,
   });
+  const imports = useQuery({ queryKey: ["imports"], queryFn: contactsApi.imports });
 
   const del = useMutation({
     mutationFn: (id: number) => contactsApi.remove(id),
@@ -57,6 +61,7 @@ export default function Contacts() {
             toast.success("Import complete");
           }
           qc.invalidateQueries({ queryKey: ["contacts"] });
+          qc.invalidateQueries({ queryKey: ["imports"] });
           qc.invalidateQueries({ queryKey: ["dashboard"] });
           qc.invalidateQueries({ queryKey: ["analytics"] });
         }
@@ -69,7 +74,8 @@ export default function Contacts() {
 
   const onFile = async (file: File) => {
     try {
-      const { jobId } = await contactsApi.importFile(file);
+      const { jobId } = await contactsApi.importFile(file, importName.trim() || undefined);
+      setImportName("");
       setProgress("Starting import…");
       pollProgress(jobId);
     } catch {
@@ -100,9 +106,17 @@ export default function Contacts() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Contacts</h1>
-          <p className="text-sm text-gray-500">Manage companies and recipients for your cold outreach campaigns.</p>
+          <p className="text-sm text-gray-500">
+            Each Excel import becomes its own list — campaigns send to one import.
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Input
+            className="sm:w-56"
+            placeholder="Name this import (optional)"
+            value={importName}
+            onChange={(e) => setImportName(e.target.value)}
+          />
           <input
             ref={fileRef}
             type="file"
@@ -149,6 +163,21 @@ export default function Contacts() {
             {STATUSES.map((s) => (
               <option key={s} value={s}>
                 {s}
+              </option>
+            ))}
+          </select>
+          <select
+            value={importId}
+            onChange={(e) => {
+              setImportId(e.target.value);
+              setPage(1);
+            }}
+            className="rounded-lg border border-[#BAE6FD] bg-[#F1F5F9] px-3 py-2 text-sm text-gray-900 outline-none focus:border-[#60A5FA] focus:ring-2 focus:ring-[#60A5FA]/30 dark:border-[#164549] dark:bg-[#12282c] dark:text-gray-100"
+          >
+            <option value="">All imports</option>
+            {imports.data?.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.name || i.fileName} ({i.contactCount ?? 0})
               </option>
             ))}
           </select>

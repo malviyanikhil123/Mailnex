@@ -1,41 +1,55 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { authGuard } from "../../middleware/auth-guard.js";
 import { campaignService } from "./campaign.service.js";
-import { setModeSchema } from "./campaign.schema.js";
+import { createCampaignSchema, updateCampaignSchema } from "./campaign.schema.js";
 
 function getUserId(req: FastifyRequest): number {
   return (req.user as { sub: number }).sub;
 }
 
+function getId(req: FastifyRequest): number {
+  const id = parseInt((req.params as { id: string }).id, 10);
+  if (isNaN(id)) throw Object.assign(new Error("Invalid id"), { statusCode: 400 });
+  return id;
+}
+
 export async function campaignController(app: FastifyInstance) {
-  app.post("/start", { preHandler: authGuard }, async (req, reply) => {
-    const userId = getUserId(req);
-    return reply.code(200).send(await campaignService.start(userId));
+  app.get("/", { preHandler: authGuard }, async (req, reply) => {
+    return reply.code(200).send({ campaigns: await campaignService.list(getUserId(req)) });
   });
 
-  app.post("/pause", { preHandler: authGuard }, async (req, reply) => {
-    const userId = getUserId(req);
-    return reply.code(200).send(await campaignService.pause(userId));
+  app.post("/", { preHandler: authGuard }, async (req, reply) => {
+    const input = createCampaignSchema.parse(req.body);
+    return reply.code(201).send(await campaignService.create(getUserId(req), input));
   });
 
-  app.post("/resume", { preHandler: authGuard }, async (req, reply) => {
-    const userId = getUserId(req);
-    return reply.code(200).send(await campaignService.resume(userId));
+  app.get("/:id", { preHandler: authGuard }, async (req, reply) => {
+    return reply.code(200).send(await campaignService.get(getUserId(req), getId(req)));
   });
 
-  app.post("/stop", { preHandler: authGuard }, async (req, reply) => {
-    const userId = getUserId(req);
-    return reply.code(200).send(await campaignService.stop(userId));
+  app.patch("/:id", { preHandler: authGuard }, async (req, reply) => {
+    const input = updateCampaignSchema.parse(req.body);
+    return reply.code(200).send(await campaignService.update(getUserId(req), getId(req), input));
   });
 
-  app.patch("/mode", { preHandler: authGuard }, async (req, reply) => {
-    const userId = getUserId(req);
-    const { mode } = setModeSchema.parse(req.body);
-    return reply.code(200).send(await campaignService.setMode(userId, mode));
+  app.delete("/:id", { preHandler: authGuard }, async (req, reply) => {
+    await campaignService.remove(getUserId(req), getId(req));
+    return reply.code(200).send({ deleted: true });
   });
 
-  app.get("/status", { preHandler: authGuard }, async (req, reply) => {
-    const userId = getUserId(req);
-    return reply.code(200).send(await campaignService.status(userId));
+  app.post("/:id/start", { preHandler: authGuard }, async (req, reply) => {
+    return reply.code(200).send(await campaignService.start(getUserId(req), getId(req)));
+  });
+
+  app.post("/:id/pause", { preHandler: authGuard }, async (req, reply) => {
+    return reply.code(200).send(await campaignService.pause(getUserId(req), getId(req)));
+  });
+
+  app.post("/:id/resume", { preHandler: authGuard }, async (req, reply) => {
+    return reply.code(200).send(await campaignService.resume(getUserId(req), getId(req)));
+  });
+
+  app.post("/:id/stop", { preHandler: authGuard }, async (req, reply) => {
+    return reply.code(200).send(await campaignService.stop(getUserId(req), getId(req)));
   });
 }

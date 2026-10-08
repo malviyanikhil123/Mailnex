@@ -4,6 +4,7 @@ export * from "./imports.js";
 export * from "./templates.js";
 export * from "./logs.js";
 export * from "./campaign.js";
+export * from "./senders.js";
 export * from "./quota.js";
 export * from "./settings.js";
 export * from "./users.js";

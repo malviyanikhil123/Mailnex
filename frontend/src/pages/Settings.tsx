@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { settingsApi } from "../services/settings.api";
+import { sendersApi } from "../services/senders.api";
 import { Button, Card, Input, Spinner, ErrorState } from "../components/ui/primitives";
 import { toast } from "../store/toast";
-import type { CandidateProfile } from "../types/api";
+import type { CandidateProfile, ProfileField, SenderAccount } from "../types/api";
 
 export default function Settings() {
   const qc = useQueryClient();
@@ -18,12 +19,9 @@ export default function Settings() {
       <h1 className="text-2xl font-bold">Settings</h1>
       <GmailSection configured={data.gmailConfigured} email={data.gmailEmail} onSaved={invalidate} />
       <GeminiSection configured={data.geminiConfigured} onSaved={invalidate} />
-      <CampaignSection
-        defaults={data.campaign}
-        provider={data.emailProvider}
-        onSaved={invalidate}
-      />
+      <SendersSection primaryEmail={data.gmailEmail} primaryLimit={data.senderDailyLimit} onSaved={invalidate} />
       <CandidateSection profile={data.candidate} onSaved={invalidate} />
+      <ProfileFieldsSection fields={data.profileFields} onSaved={invalidate} />
       <ResumeSection fileName={data.resumeFileName} onSaved={invalidate} />
     </div>
   );
@@ -69,50 +67,138 @@ function GeminiSection({ configured, onSaved }: { configured: boolean; onSaved: 
   );
 }
 
-function CampaignSection({
-  defaults,
-  provider,
+function errorMessage(err: unknown, fallback: string): string {
+  return (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback;
+}
+
+/** Gmail accounts campaigns can send from. App passwords are write-only: verified
+ *  against Gmail on save, stored encrypted, and never shown again. */
+function SendersSection({
+  primaryEmail,
+  primaryLimit,
   onSaved,
 }: {
-  defaults: { dailyLimit: number; startHour: number; endHour: number; testEmail: string | null; mode: string } | null;
-  provider: string;
+  primaryEmail: string | null;
+  primaryLimit: number;
   onSaved: () => void;
 }) {
-  const [dailyLimit, setDailyLimit] = useState(defaults?.dailyLimit ?? 50);
-  const [startHour, setStartHour] = useState(defaults?.startHour ?? 9);
-  const [endHour, setEndHour] = useState(defaults?.endHour ?? 18);
-  const [testEmail, setTestEmail] = useState(defaults?.testEmail ?? "");
-  const m = useMutation({
-    mutationFn: () =>
-      settingsApi.updateCampaign({
-        dailyLimit,
-        startHour,
-        endHour,
-        emailProvider: provider,
-        ...(testEmail ? { testEmail } : {}),
-      }),
-    onSuccess: () => { toast.success("Campaign settings saved"); onSaved(); },
-    onError: () => toast.error("Save failed (check the sending window)"),
+  const qc = useQueryClient();
+  const { data: senders = [] } = useQuery({ queryKey: ["senders"], queryFn: sendersApi.list });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["senders"] });
+
+  const [limit, setLimit] = useState(primaryLimit);
+  useEffect(() => setLimit(primaryLimit), [primaryLimit]);
+  const saveLimit = useMutation({
+    mutationFn: () => settingsApi.updateSending(limit),
+    onSuccess: () => { toast.success("Primary Gmail limit saved"); onSaved(); },
+    onError: () => toast.error("Save failed"),
   });
+
+  const [form, setForm] = useState({ label: "", email: "", appPassword: "", dailyLimit: 50 });
+  const add = useMutation({
+    mutationFn: () => sendersApi.create(form),
+    onSuccess: () => {
+      toast.success("Sender added");
+      setForm({ label: "", email: "", appPassword: "", dailyLimit: 50 });
+      refresh();
+    },
+    onError: (err) => toast.error(errorMessage(err, "Could not add sender")),
+  });
+  const update = useMutation({
+    mutationFn: ({ id, patch }: { id: number; patch: Partial<SenderAccount> & { appPassword?: string } }) =>
+      sendersApi.update(id, patch),
+    onSuccess: () => { toast.success("Sender updated"); refresh(); },
+    onError: (err) => toast.error(errorMessage(err, "Update failed")),
+  });
+  const remove = useMutation({
+    mutationFn: (id: number) => sendersApi.remove(id),
+    onSuccess: () => {
+      toast.success("Sender removed");
+      refresh();
+      qc.invalidateQueries({ queryKey: ["campaigns"] });
+    },
+    onError: (err) => toast.error(errorMessage(err, "Delete failed")),
+  });
+
   return (
     <Card>
-      <SectionHeader title="Campaign" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <SectionHeader title="Sender accounts" badge={`${senders.length + 1} account${senders.length ? "s" : ""}`} />
+      <p className="mb-3 text-xs text-gray-500">
+        Each account sends at most one email per minute and stops at its own daily limit, however many campaigns use it.
+        App passwords are checked with Gmail, stored encrypted, and never shown again.
+      </p>
+
+      <div className="mb-4 flex flex-col gap-2 rounded-lg border border-[#BAE6FD]/70 p-3 sm:flex-row sm:items-end dark:border-gray-800">
+        <div className="flex-1 text-sm">
+          <div className="font-medium">Primary Gmail</div>
+          <div className="text-xs text-gray-500">{primaryEmail ?? "Not configured — set it in the Gmail section above"}</div>
+        </div>
         <Labeled label="Daily limit">
-          <Input type="number" value={dailyLimit} onChange={(e) => setDailyLimit(+e.target.value)} />
+          <Input type="number" min={1} className="sm:w-28" value={limit} onChange={(e) => setLimit(+e.target.value)} />
         </Labeled>
-        <Labeled label="Start hour">
-          <Input type="number" value={startHour} onChange={(e) => setStartHour(+e.target.value)} />
-        </Labeled>
-        <Labeled label="End hour">
-          <Input type="number" value={endHour} onChange={(e) => setEndHour(+e.target.value)} />
-        </Labeled>
-        <Labeled label="Test email">
-          <Input value={testEmail} onChange={(e) => setTestEmail(e.target.value)} />
-        </Labeled>
+        <Button variant="secondary" className="text-xs" onClick={() => saveLimit.mutate()} disabled={saveLimit.isPending || limit < 1}>
+          Save
+        </Button>
+      </div>
+
+      {senders.length > 0 && (
+        <div className="mb-4 space-y-2">
+          {senders.map((s) => (
+            <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-[#BAE6FD]/70 p-3 text-sm dark:border-gray-800">
+              <div className="min-w-0 flex-1">
+                <div className="font-medium">{s.label} {!s.active && <span className="text-xs text-gray-500">(inactive)</span>}</div>
+                <div className="truncate text-xs text-gray-500">{s.email} · {s.dailyLimit}/day</div>
+              </div>
+              <button
+                className="text-xs font-medium text-[#3B82F6] hover:underline"
+                onClick={() => update.mutate({ id: s.id, patch: { active: !s.active } })}
+              >
+                {s.active ? "Deactivate" : "Activate"}
+              </button>
+              <button
+                className="text-xs font-medium text-[#3B82F6] hover:underline"
+                onClick={() => {
+                  const appPassword = prompt(`New app password for ${s.email}`)?.trim();
+                  if (appPassword) update.mutate({ id: s.id, patch: { appPassword } });
+                }}
+              >
+                Change password
+              </button>
+              <button
+                className="text-xs font-medium text-red-600 hover:underline dark:text-red-400"
+                onClick={() =>
+                  confirm(`Remove ${s.email}? Campaigns using it fall back to the primary Gmail.`) && remove.mutate(s.id)
+                }
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Input placeholder="Label (e.g. Sales)" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} />
+        <Input placeholder="Gmail address" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        <Input
+          type="password"
+          autoComplete="new-password"
+          placeholder="App password (write-only)"
+          value={form.appPassword}
+          onChange={(e) => setForm({ ...form, appPassword: e.target.value })}
+        />
+        <Input
+          type="number"
+          min={1}
+          placeholder="Daily limit"
+          value={form.dailyLimit}
+          onChange={(e) => setForm({ ...form, dailyLimit: +e.target.value })}
+        />
       </div>
       <div className="mt-3">
-        <Button onClick={() => m.mutate()} disabled={m.isPending}>Save Campaign</Button>
+        <Button onClick={() => add.mutate()} disabled={add.isPending || !form.label || !form.email || !form.appPassword}>
+          {add.isPending ? "Verifying with Gmail…" : "+ Add sender"}
+        </Button>
       </div>
     </Card>
   );
@@ -141,7 +227,7 @@ function CandidateSection({ profile, onSaved }: { profile: CandidateProfile; onS
 
   return (
     <Card>
-      <SectionHeader title="Candidate Profile" />
+      <SectionHeader title="My Profile" />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {field("name", "Name")}
         {field("phone", "Phone")}
@@ -157,6 +243,51 @@ function CandidateSection({ profile, onSaved }: { profile: CandidateProfile; onS
       </div>
       <div className="mt-3">
         <Button onClick={() => m.mutate()} disabled={m.isPending}>Save Profile</Button>
+      </div>
+    </Card>
+  );
+}
+
+/** User-defined profile fields, usable in templates as {{key}}. */
+function ProfileFieldsSection({ fields, onSaved }: { fields: ProfileField[]; onSaved: () => void }) {
+  const [rows, setRows] = useState<ProfileField[]>(fields);
+  useEffect(() => setRows(fields), [fields]);
+  const setRow = (i: number, patch: Partial<ProfileField>) =>
+    setRows((r) => r.map((row, j) => (j === i ? { ...row, ...patch } : row)));
+
+  const m = useMutation({
+    mutationFn: () => settingsApi.saveProfileFields(rows.map((r) => ({ ...r, key: r.key.trim(), label: r.label.trim() }))),
+    onSuccess: () => { toast.success("Custom fields saved"); onSaved(); },
+    onError: (err) => toast.error(errorMessage(err, "Save failed — keys must be unique, start with a letter, and not be a built-in variable")),
+  });
+
+  return (
+    <Card>
+      <SectionHeader title="Custom profile fields" badge={`${rows.length} field${rows.length === 1 ? "" : "s"}`} />
+      <p className="mb-3 text-xs text-gray-500">
+        Add any detail you want to reuse in emails — company name, offer, booking link… Use it in a template as{" "}
+        <code className="rounded bg-[#BAE6FD]/50 px-1 dark:bg-gray-800">{"{{key}}"}</code>.
+      </p>
+      <div className="space-y-2">
+        {rows.map((r, i) => (
+          <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_2fr_auto]">
+            <Input placeholder="Label" value={r.label} onChange={(e) => setRow(i, { label: e.target.value })} />
+            <Input placeholder="key" className="font-mono" value={r.key} onChange={(e) => setRow(i, { key: e.target.value })} />
+            <Input placeholder="Value" value={r.value} onChange={(e) => setRow(i, { value: e.target.value })} />
+            <button
+              className="px-2 text-xs font-medium text-red-600 hover:underline dark:text-red-400"
+              onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex gap-2">
+        <Button variant="secondary" onClick={() => setRows((r) => [...r, { key: "", label: "", value: "" }])}>+ Add field</Button>
+        <Button onClick={() => m.mutate()} disabled={m.isPending || rows.some((r) => !r.key.trim() || !r.label.trim())}>
+          Save fields
+        </Button>
       </div>
     </Card>
   );

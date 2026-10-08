@@ -41,6 +41,8 @@ export interface PersonalizeInput {
   template: { subject: string; body: string };
   vars: PersonalizeVars;
   apiKey?: string;
+  language?: string;
+  instructions?: string;
 }
 
 export interface PersonalizeResult {
@@ -104,6 +106,8 @@ export async function personalize(
       company: vars.company,
       location: vars.location,
       candidateName: vars.candidate.name,
+      language: input.language,
+      instructions: input.instructions,
     });
 
     const result = await model.generateContent(promptText);

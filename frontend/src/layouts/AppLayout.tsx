@@ -22,7 +22,7 @@ const nav = [
   { to: "/inbox", label: "Inbox", icon: Inbox },
   { to: "/contacts", label: "Contacts", icon: Users },
   { to: "/templates", label: "Templates", icon: FileText },
-  { to: "/campaign", label: "Campaign", icon: Send },
+  { to: "/campaign", label: "Campaigns", icon: Send },
   { to: "/logs", label: "Logs", icon: ScrollText },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/settings", label: "Settings", icon: SettingsIcon },

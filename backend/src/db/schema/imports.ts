@@ -3,6 +3,7 @@ import { users } from "./users.js";
 export const contactsImports = pgTable("contacts_imports", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name"),
   fileName: text("file_name").notNull(),
   totalRows: integer("total_rows").notNull().default(0),
   importedRows: integer("imported_rows").notNull().default(0),

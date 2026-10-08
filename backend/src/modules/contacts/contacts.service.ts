@@ -32,6 +32,7 @@ export class ContactsService {
     filePath: string,
     fileName: string,
     jobId: string,
+    name?: string,
   ): Promise<ImportSummaryResult> {
     // Initialize progress entry
     importProgress.set(jobId, { processed: 0, total: 0, done: false });
@@ -76,8 +77,26 @@ export class ContactsService {
         validRows.push(row);
       }
 
-      // Bulk-insert unique valid rows; onConflictDoNothing handles DB-level duplicates.
-      const { inserted } = await this.repo.bulkInsert(userId, validRows);
+      // Create the import first so every inserted contact can point at it.
+      const importRow = await this.repo.recordImport(userId, {
+        name: name?.trim() || null,
+        fileName,
+        total: totalRows,
+        imported: 0,
+        skipped: 0,
+        duplicate: 0,
+        invalid: 0,
+      });
+
+      // Bulk-insert unique valid rows; onConflictDoNothing handles DB-level duplicates
+      // (an email already in another import of this user stays in that import).
+      let inserted: number;
+      try {
+        ({ inserted } = await this.repo.bulkInsert(userId, validRows, importRow.id));
+      } catch (err) {
+        await this.repo.deleteImport(userId, importRow.id).catch(() => {});
+        throw err;
+      }
       const dbDups = validRows.length - inserted;
 
       const duplicateCount = withinFileDupCount + dbDups;
@@ -91,9 +110,8 @@ export class ContactsService {
         invalid: invalidCount,
       };
 
-      // Persist import record
-      await this.repo.recordImport(userId, {
-        fileName,
+      // Persist the final counts on the import record
+      await this.repo.updateImportCounts(importRow.id, {
         total: totalRows,
         imported: inserted,
         skipped: skippedCount,

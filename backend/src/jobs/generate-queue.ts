@@ -14,6 +14,9 @@ export interface GenerateQueueDeps {
   countScheduledForDay(dayStart: Date): Promise<number>;
   selectableContacts(limit: number, now: Date): Promise<{ id: number }[]>;
   enqueue(rows: { contactId: number; scheduledAt: Date }[]): Promise<number>;
+  /** Emails the sending account can still take today once other campaigns sharing it
+   *  are counted. Omitted = no sender-level cap. */
+  senderRemaining?(now: Date): Promise<number>;
   rand?: () => number;
 }
 
@@ -32,7 +35,8 @@ export async function generateDailyQueue(deps: GenerateQueueDeps, now: Date): Pr
   if (alreadyScheduled > 0) return 0;
 
   const quotaToday = await deps.getQuota(now);
-  const remaining = settings.dailyLimit - quotaToday;
+  let remaining = settings.dailyLimit - quotaToday;
+  if (deps.senderRemaining) remaining = Math.min(remaining, await deps.senderRemaining(now));
   if (remaining <= 0) return 0;
 
   const selectable = await deps.selectableContacts(remaining, now);

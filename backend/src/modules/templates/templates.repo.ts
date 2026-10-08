@@ -2,6 +2,7 @@ import { db } from "../../db/index.js";
 import { emailTemplates } from "../../db/schema/templates.js";
 import { resumes } from "../../db/schema/resumes.js";
 import { emailLogs } from "../../db/schema/logs.js";
+import { campaignTemplates } from "../../db/schema/campaign.js";
 import { and, eq, ne, sql, desc, asc } from "drizzle-orm";
 import type { CreateTemplateInput, UpdateTemplateInput } from "./templates.schema.js";
 
@@ -134,6 +135,37 @@ export class TemplatesRepo {
       .limit(1);
 
     return fallbackRows[0]?.template;
+  }
+
+  /** Rotates through the templates attached to a campaign, least-used in that campaign
+   *  first. First-time contacts never get "followup" templates and already-contacted
+   *  ones prefer them; if the preferred group is empty, any template of the campaign is used. */
+  async pickForCampaign(
+    userId: number,
+    campaignId: number,
+    options?: { isFollowup?: boolean },
+  ): Promise<Template | undefined> {
+    const pick = (categoryFilter?: ReturnType<typeof eq>) =>
+      db
+        .select({ template: emailTemplates })
+        .from(campaignTemplates)
+        .innerJoin(emailTemplates, eq(campaignTemplates.templateId, emailTemplates.id))
+        .leftJoin(
+          emailLogs,
+          and(eq(emailLogs.templateId, emailTemplates.id), eq(emailLogs.campaignId, campaignId)),
+        )
+        .where(and(eq(campaignTemplates.campaignId, campaignId), eq(emailTemplates.userId, userId), categoryFilter))
+        .groupBy(emailTemplates.id)
+        .orderBy(sql`count(${emailLogs.id}) ASC`, asc(emailTemplates.id))
+        .limit(1);
+
+    const preferred = options?.isFollowup === true
+      ? eq(emailTemplates.category, "followup")
+      : ne(emailTemplates.category, "followup");
+    const [row] = await pick(preferred);
+    if (row) return row.template;
+    const [fallback] = await pick();
+    return fallback?.template;
   }
 }
 

@@ -11,6 +11,7 @@ import { contactsRoutes } from "./modules/contacts/contacts.routes.js";
 import { templatesRoutes } from "./modules/templates/templates.routes.js";
 import { settingsRoutes } from "./modules/settings/settings.routes.js";
 import { campaignRoutes } from "./modules/campaign/campaign.routes.js";
+import { sendersRoutes } from "./modules/senders/senders.routes.js";
 import { logsRoutes } from "./modules/logs/logs.routes.js";
 import { analyticsRoutes } from "./modules/analytics/analytics.routes.js";
 import { inboxRoutes } from "./modules/inbox/inbox.routes.js";
@@ -38,7 +39,8 @@ export async function buildApp() {
   await app.register(contactsRoutes, { prefix: "/contacts" });
   await app.register(templatesRoutes, { prefix: "/templates" });
   await app.register(settingsRoutes, { prefix: "/settings" });
-  await app.register(campaignRoutes, { prefix: "/campaign" });
+  await app.register(campaignRoutes, { prefix: "/campaigns" });
+  await app.register(sendersRoutes, { prefix: "/senders" });
   await app.register(logsRoutes, { prefix: "/logs" });
   await app.register(analyticsRoutes, { prefix: "/analytics" });
   await app.register(inboxRoutes, { prefix: "/inbox" });

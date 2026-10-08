@@ -10,7 +10,8 @@ import {
   updateGmailSchema,
   updateGeminiSchema,
   candidateProfileSchema,
-  updateCampaignSchema,
+  updateSendingSchema,
+  profileFieldsSchema,
 } from "./settings.schema.js";
 
 function getUserId(req: FastifyRequest): number {
@@ -48,12 +49,25 @@ export async function settingsController(app: FastifyInstance) {
     return reply.code(200).send(merged);
   });
 
-  /** PATCH /settings/campaign — mode/window/limit/testEmail/provider. */
-  app.patch("/campaign", { preHandler: authGuard }, async (req, reply) => {
+  /** PATCH /settings/sending — daily cap of the primary Gmail. */
+  app.patch("/sending", { preHandler: authGuard }, async (req, reply) => {
     const userId = getUserId(req);
-    const input = updateCampaignSchema.parse(req.body);
-    const updated = await settingsService.updateCampaign(userId, input);
-    return reply.code(200).send(updated);
+    const input = updateSendingSchema.parse(req.body);
+    await settingsService.updateSending(userId, input);
+    return reply.code(200).send({ updated: true });
+  });
+
+  /** GET /settings/profile-fields — custom My Profile fields. */
+  app.get("/profile-fields", { preHandler: authGuard }, async (req, reply) => {
+    const userId = getUserId(req);
+    return reply.code(200).send({ fields: await settingsService.getProfileFields(userId) });
+  });
+
+  /** PUT /settings/profile-fields — replace the full list of custom fields. */
+  app.put("/profile-fields", { preHandler: authGuard }, async (req, reply) => {
+    const userId = getUserId(req);
+    const input = profileFieldsSchema.parse(req.body);
+    return reply.code(200).send({ fields: await settingsService.replaceProfileFields(userId, input) });
   });
 
   /** GET /settings/resumes — list all uploaded resumes for user. */

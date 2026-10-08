@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import type { CandidateProfile, PublicSettings, Resume } from "../types/api";
+import type { CandidateProfile, ProfileField, PublicSettings, Resume } from "../types/api";
 
 export const settingsApi = {
   get: () => apiClient.get<PublicSettings>("/settings").then((r) => r.data),
@@ -9,8 +9,12 @@ export const settingsApi = {
     apiClient.patch("/settings/gemini", { apiKey }).then((r) => r.data),
   updateCandidate: (profile: CandidateProfile) =>
     apiClient.patch<CandidateProfile>("/settings/candidate", profile).then((r) => r.data),
-  updateCampaign: (input: Record<string, unknown>) =>
-    apiClient.patch("/settings/campaign", input).then((r) => r.data),
+  updateSending: (senderDailyLimit: number) =>
+    apiClient.patch("/settings/sending", { senderDailyLimit }).then((r) => r.data),
+  saveProfileFields: (fields: ProfileField[]) =>
+    apiClient
+      .put<{ fields: ProfileField[] }>("/settings/profile-fields", { fields })
+      .then((r) => r.data.fields),
   uploadResume: (file: File) => {
     const form = new FormData();
     form.append("file", file);

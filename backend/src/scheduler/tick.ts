@@ -10,29 +10,38 @@ export interface TickSettings {
 
 export interface CampaignTickDeps extends GenerateQueueDeps {
   getTickSettings(): Promise<TickSettings | null>;
-  dueQueueItems(now: Date, limit: number): Promise<{ id: number; contactId: number }[]>;
+  dueQueueItems(now: Date, limit: number): Promise<{ id: number; contactId: number; scheduledAt?: Date }[]>;
   markQueue(id: number, status: "PROCESSING" | "DONE" | "CANCELLED" | "SCHEDULED"): Promise<void>;
   runSendJob(contactId: number): Promise<{ outcome: SendOutcome }>;
 }
 
-/** One scheduler tick (runs every minute). Sends AT MOST ONE due email to
- *  enforce no-bulk / no-simultaneous sending. Respects state + window + quota.
- *  Stops early if the campaign auto-pauses (quota hit) mid-tick. */
-export async function campaignTick(deps: CampaignTickDeps, now: Date): Promise<void> {
-  const settings = await deps.getTickSettings();
-  if (!settings || settings.state !== "RUNNING") return;
+/** One scheduler tick for one sending account (runs every minute). Every RUNNING
+ *  campaign that sends from the account and is inside its window gets today's queue
+ *  built, then AT MOST ONE due email is sent across all of them — the earliest
+ *  scheduled — so campaigns sharing a Gmail never send in bulk or simultaneously. */
+export async function senderTick(campaigns: CampaignTickDeps[], now: Date): Promise<void> {
+  let next: { deps: CampaignTickDeps; item: { id: number; contactId: number; scheduledAt?: Date } } | null = null;
 
-  const hour = now.getHours();
-  if (hour < settings.startHour || hour >= settings.endHour) return;
+  for (const deps of campaigns) {
+    const settings = await deps.getTickSettings();
+    if (!settings || settings.state !== "RUNNING") continue;
 
-  // Ensure today's queue exists (idempotent).
-  await generateDailyQueue(deps, now);
+    const hour = now.getHours();
+    if (hour < settings.startHour || hour >= settings.endHour) continue;
 
-  // Process at most one due item this tick.
-  const due = await deps.dueQueueItems(now, 1);
-  if (due.length === 0) return;
+    // Ensure today's queue exists (idempotent).
+    await generateDailyQueue(deps, now);
 
-  const item = due[0];
+    const [item] = await deps.dueQueueItems(now, 1);
+    if (!item) continue;
+    if (!next || (item.scheduledAt && next.item.scheduledAt && item.scheduledAt < next.item.scheduledAt)) {
+      next = { deps, item };
+    }
+  }
+
+  if (!next) return;
+
+  const { deps, item } = next;
   await deps.markQueue(item.id, "PROCESSING");
   try {
     const result = await deps.runSendJob(item.contactId);
@@ -44,4 +53,9 @@ export async function campaignTick(deps: CampaignTickDeps, now: Date): Promise<v
     logger.error({ err, queueId: item.id }, "send job threw — marking queue item DONE");
     await deps.markQueue(item.id, "DONE");
   }
+}
+
+/** Tick for a single campaign with its own sending account. */
+export function campaignTick(deps: CampaignTickDeps, now: Date): Promise<void> {
+  return senderTick([deps], now);
 }

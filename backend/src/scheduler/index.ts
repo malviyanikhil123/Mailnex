@@ -1,6 +1,8 @@
 import cron from "node-cron";
 import { logger } from "../utils/logger.js";
-import { campaignRepo } from "../modules/campaign/campaign.repo.js";
+import { campaignRepo, type Campaign } from "../modules/campaign/campaign.repo.js";
+import { genDeps, campaignLookups } from "../modules/campaign/campaign.service.js";
+import { sendersService } from "../modules/senders/senders.service.js";
 import { templatesRepo } from "../modules/templates/templates.repo.js";
 import { logsRepo } from "../modules/logs/logs.repo.js";
 import { settingsService } from "../modules/settings/settings.service.js";
@@ -8,33 +10,42 @@ import { personalize } from "../integrations/gemini/client.js";
 import { getEmailProvider } from "../integrations/email/factory.js";
 import type { EmailProvider } from "../integrations/email/provider.js";
 import { sendEmailJob, type SendEmailDeps } from "../jobs/send-email.js";
-import { campaignTick, type CampaignTickDeps } from "./tick.js";
+import { senderTick, type CampaignTickDeps } from "./tick.js";
 import { INBOX } from "../config/constants.js";
 import { inboxRepo } from "../modules/inbox/inbox.repo.js";
 import { runClassifyForUser, runSyncForUser } from "../modules/inbox/inbox.service.js";
 
-// Tracks userIds whose campaign was auto-paused by hitting the Gmail daily quota,
-// so the midnight job only auto-resumes quota-pauses (not manual pauses).
-const autoPausedUsers = new Set<number>();
+// Campaign ids auto-paused by hitting their sender's Gmail daily quota, so the midnight
+// job only auto-resumes quota-pauses (not manual pauses).
+const autoPausedCampaigns = new Set<number>();
 
-/** Constructs the active EmailProvider for a specific user from stored (decrypted) credentials. */
-async function buildProviderForUser(userId: number): Promise<EmailProvider> {
+/** EmailProvider for the account a campaign sends from (null = the primary Gmail). */
+async function buildProviderForSender(userId: number, senderAccountId: number | null): Promise<EmailProvider> {
   const provider = await settingsService.getEmailProviderName(userId);
-  const creds = await settingsService.getGmailCreds(userId);
-  if (!creds) throw new Error(`Email provider not configured for user ${userId} (missing Gmail credentials)`);
+  const creds = await sendersService.getCreds(userId, senderAccountId);
+  if (!creds) {
+    throw new Error(`Sender not configured for user ${userId} (account ${senderAccountId ?? "primary"})`);
+  }
   return getEmailProvider({ provider, gmail: { user: creds.email, pass: creds.password } });
 }
 
-/** Wires real send-email dependencies for a specific user. */
-function buildSendDeps(userId: number): SendEmailDeps {
+/** Wires real send-email dependencies for one campaign. `senderCampaignIds` are the
+ *  running campaigns sharing its sending account. */
+function buildSendDeps(campaign: Campaign, senderCampaignIds: number[]): SendEmailDeps {
+  const { userId } = campaign;
   return {
     campaign: {
       getContact: (id) => campaignRepo.getContact(id),
       getSettings: async () => {
-        const s = await campaignRepo.getSettings(userId);
-        return s ? { mode: s.mode, testEmail: s.testEmail } : null;
+        const c = await campaignRepo.getById(campaign.id);
+        return c
+          ? { mode: c.mode, testEmail: c.testEmail, language: c.language, aiEnabled: c.aiEnabled, aiInstructions: c.aiInstructions }
+          : null;
       },
-      setState: (state) => campaignRepo.setState(userId, state),
+      // Gmail's quota is per account, so hitting it pauses every campaign on that sender.
+      setState: async (state) => {
+        for (const id of senderCampaignIds) await campaignRepo.setState(id, state);
+      },
       markContactProcessing: (id) => campaignRepo.markContactProcessing(id),
       markContactSent: (id, sentAt) => campaignRepo.markContactSent(id, sentAt),
       markContactBounced: (id) => campaignRepo.markContactBounced(id),
@@ -44,7 +55,7 @@ function buildSendDeps(userId: number): SendEmailDeps {
       incQuota: (d) => campaignRepo.incQuota(userId, d),
     },
     templates: {
-      pickRandomActive: (options) => templatesRepo.pickRandomActive(userId, options),
+      pickRandomActive: (options) => templatesRepo.pickForCampaign(userId, campaign.id, options),
     },
     settings: {
       getGeminiKey: () => settingsService.getGeminiKey(userId),
@@ -55,45 +66,43 @@ function buildSendDeps(userId: number): SendEmailDeps {
         const att = await settingsService.getResumeAttachment(userId, resumeId);
         return att?.path ?? null;
       },
+      getProfileVars: () => settingsService.getProfileVars(userId),
     },
     personalize,
-    getProvider: () => buildProviderForUser(userId),
+    getProvider: () => buildProviderForSender(userId, campaign.senderAccountId),
     logs: {
-      create: (log) => logsRepo.create(userId, log),
+      create: (log) => logsRepo.create(userId, { ...log, campaignId: campaign.id }),
     },
   };
 }
 
-/** Wires campaign-tick dependencies for a specific user. */
-function buildTickDeps(userId: number): CampaignTickDeps {
-  const sendDeps = buildSendDeps(userId);
+/** Wires campaign-tick dependencies for one campaign. */
+function buildTickDeps(campaign: Campaign, senderCampaignIds: number[]): CampaignTickDeps {
+  const sendDeps = buildSendDeps(campaign, senderCampaignIds);
   return {
+    ...genDeps(campaign, campaignRepo, campaignLookups),
     getTickSettings: async () => {
-      const s = await campaignRepo.getSettings(userId);
-      return s ? { state: s.state, startHour: s.startHour, endHour: s.endHour } : null;
+      const c = await campaignRepo.getById(campaign.id);
+      return c ? { state: c.state, startHour: c.startHour, endHour: c.endHour } : null;
     },
-    getSettings: async () => {
-      const s = await campaignRepo.getSettings(userId);
-      return s
-        ? { state: s.state, dailyLimit: s.dailyLimit, startHour: s.startHour, endHour: s.endHour }
-        : null;
-    },
-    getQuota: (d) => campaignRepo.getQuota(userId, d),
-    countScheduledForDay: (d) => campaignRepo.countScheduledForDay(userId, d),
-    selectableContacts: (limit, now) => campaignRepo.selectableContacts(userId, limit, now),
-    enqueue: (rows) => campaignRepo.enqueue(userId, rows),
-    dueQueueItems: (now, limit) => campaignRepo.dueQueueItems(userId, now, limit),
+    dueQueueItems: (now, limit) => campaignRepo.dueQueueItems(campaign.id, now, limit),
     markQueue: (id, status) => campaignRepo.markQueue(id, status),
     runSendJob: async (contactId) => {
       const result = await sendEmailJob(contactId, sendDeps);
-      if (result.outcome === "paused") autoPausedUsers.add(userId);
+      if (result.outcome === "paused") senderCampaignIds.forEach((id) => autoPausedCampaigns.add(id));
       return result;
     },
   };
 }
 
-// Tracks userIds currently executing a tick to prevent overlapping/simultaneous sends.
-const userRunningTicks = new Set<number>();
+/** Campaigns sharing a key send from the same Gmail account. */
+function senderKey(c: Campaign): string {
+  return c.senderAccountId == null ? `primary:${c.userId}` : `account:${c.senderAccountId}`;
+}
+
+// Sender keys currently executing a tick, to prevent overlapping/simultaneous sends
+// from one Gmail account.
+const senderRunningTicks = new Set<string>();
 
 /**
  * Tracks userIds currently syncing their inbox.
@@ -160,27 +169,29 @@ async function runInboxRetention(now: Date): Promise<void> {
   logger.info({ restored, purgedActive, purgedTrash }, "inbox retention pass finished");
 }
 
-/** Starts the per-minute multi-user campaign ticks and the midnight auto-resume job. */
+/** Starts the per-minute per-sender campaign ticks and the midnight auto-resume job. */
 export function startScheduler(): void {
-  // Every minute: process at most one due email per active running user.
+  // Every minute: per sending account, process at most one due email across its running campaigns.
   cron.schedule("* * * * *", () => {
     void (async () => {
       try {
-        const runningCampaigns = await campaignRepo.getAllRunningSettings();
-        for (const camp of runningCampaigns) {
-          const userId = camp.userId;
-          if (userRunningTicks.has(userId)) {
-            logger.debug({ userId }, "campaign tick already in progress — skipping overlapping tick");
+        const running = await campaignRepo.getAllRunning();
+        const bySender = new Map<string, Campaign[]>();
+        for (const c of running) bySender.set(senderKey(c), [...(bySender.get(senderKey(c)) ?? []), c]);
+
+        for (const [key, group] of bySender) {
+          if (senderRunningTicks.has(key)) {
+            logger.debug({ sender: key }, "sender tick already in progress — skipping overlapping tick");
             continue;
           }
-          userRunningTicks.add(userId);
-          const userDeps = buildTickDeps(userId);
-          campaignTick(userDeps, new Date())
+          senderRunningTicks.add(key);
+          const ids = group.map((c) => c.id);
+          senderTick(group.map((c) => buildTickDeps(c, ids)), new Date())
             .catch((err) => {
-              logger.error({ err, userId }, "user campaign tick failed");
+              logger.error({ err, sender: key, campaignIds: ids }, "sender campaign tick failed");
             })
             .finally(() => {
-              userRunningTicks.delete(userId);
+              senderRunningTicks.delete(key);
             });
         }
       } catch (err) {
@@ -189,18 +200,18 @@ export function startScheduler(): void {
     })();
   });
 
-  // Midnight: auto-resume quota-paused campaigns for all users.
+  // Midnight: auto-resume campaigns that were paused by a sender hitting its quota.
   cron.schedule("0 0 * * *", () => {
     void (async () => {
       try {
-        for (const userId of autoPausedUsers) {
-          const s = await campaignRepo.getSettings(userId);
-          if (s?.state === "PAUSED") {
-            await campaignRepo.setState(userId, "RUNNING");
-            logger.info({ userId }, "campaign auto-resumed for the new day after quota pause");
+        for (const id of autoPausedCampaigns) {
+          const c = await campaignRepo.getById(id);
+          if (c?.state === "PAUSED") {
+            await campaignRepo.setState(id, "RUNNING");
+            logger.info({ campaignId: id, userId: c.userId }, "campaign auto-resumed for the new day after quota pause");
           }
         }
-        autoPausedUsers.clear();
+        autoPausedCampaigns.clear();
       } catch (err) {
         logger.error({ err }, "midnight auto-resume failed");
       }
@@ -225,5 +236,5 @@ export function startScheduler(): void {
     });
   });
 
-  logger.info("multi-user scheduler started (per-minute send tick, 10-minute inbox sync, midnight auto-resume, 3am retention)");
+  logger.info("multi-campaign scheduler started (per-minute per-sender send tick, 10-minute inbox sync, midnight auto-resume, 3am retention)");
 }
