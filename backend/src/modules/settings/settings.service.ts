@@ -1,16 +1,18 @@
 import * as path from "path";
 import { encrypt, decrypt } from "../../utils/crypto.js";
 import { logger } from "../../utils/logger.js";
+import { LIMITS } from "../../config/constants.js";
 import {
   settingsRepo,
   type ISettingsRepo,
-  type CampaignSettings,
+  type ProfileField,
 } from "./settings.repo.js";
 import type {
   UpdateGmailInput,
   UpdateGeminiInput,
   CandidateProfile,
-  UpdateCampaignInput,
+  UpdateSendingInput,
+  ProfileFieldsInput,
 } from "./settings.schema.js";
 
 export interface GmailCreds {
@@ -26,15 +28,9 @@ export interface PublicSettings {
   geminiConfigured: boolean;
   candidate: CandidateProfile;
   resumeFileName: string | null;
-  campaign: {
-    mode: string;
-    state: string;
-    dailyLimit: number;
-    startHour: number;
-    endHour: number;
-    testEmail: string | null;
-    enabled: boolean;
-  } | null;
+  /** Daily cap of the primary Gmail, shared by every campaign sending from it. */
+  senderDailyLimit: number;
+  profileFields: Pick<ProfileField, "key" | "label" | "value">[];
 }
 
 export class SettingsService {
@@ -84,6 +80,29 @@ export class SettingsService {
     return lines.join("\n");
   }
 
+  // ---- custom profile fields -------------------------------------------------
+
+  async getProfileFields(userId: number): Promise<Pick<ProfileField, "key" | "label" | "value">[]> {
+    const rows = await this.repo.listProfileFields(userId);
+    return rows.map(({ key, label, value }) => ({ key, label, value }));
+  }
+
+  /** Custom fields as template variables: {{key}} → value. */
+  async getProfileVars(userId: number): Promise<Record<string, string>> {
+    const rows = await this.repo.listProfileFields(userId);
+    return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  }
+
+  async replaceProfileFields(userId: number, input: ProfileFieldsInput) {
+    await this.repo.replaceProfileFields(userId, input.fields);
+    return this.getProfileFields(userId);
+  }
+
+  async getSenderDailyLimit(userId: number): Promise<number> {
+    const app = await this.repo.getApp(userId);
+    return app?.senderDailyLimit ?? LIMITS.PRIMARY_SENDER_DAILY;
+  }
+
   async getResumePath(userId: number): Promise<string | null> {
     const app = await this.repo.getApp(userId);
     return app?.resumePath ?? null;
@@ -113,15 +132,8 @@ export class SettingsService {
     await this.repo.patchApp(userId, { resumePath });
   }
 
-  async updateCampaign(userId: number, input: UpdateCampaignInput): Promise<CampaignSettings> {
-    const { emailProvider, ...campaignPatch } = input;
-    if (emailProvider !== undefined) {
-      await this.repo.patchApp(userId, { emailProvider });
-    }
-    if (campaignPatch.testEmail === "") {
-      (campaignPatch as any).testEmail = null;
-    }
-    return this.repo.patchCampaign(userId, campaignPatch as Partial<CampaignSettings>);
+  async updateSending(userId: number, input: UpdateSendingInput): Promise<void> {
+    await this.repo.patchApp(userId, { senderDailyLimit: input.senderDailyLimit });
   }
 
   async listResumes(userId: number) {
@@ -157,7 +169,6 @@ export class SettingsService {
 
   async getPublic(userId: number): Promise<PublicSettings> {
     const app = await this.repo.getApp(userId);
-    const campaign = await this.repo.getCampaign(userId);
     return {
       emailProvider: app?.emailProvider ?? "gmail",
       gmailEmail: app?.gmailEmail ?? null,
@@ -165,17 +176,8 @@ export class SettingsService {
       geminiConfigured: !!app?.geminiApiKeyEnc,
       candidate: await this.getCandidateProfile(userId),
       resumeFileName: app?.resumePath ? path.basename(app.resumePath) : null,
-      campaign: campaign
-        ? {
-            mode: campaign.mode,
-            state: campaign.state,
-            dailyLimit: campaign.dailyLimit,
-            startHour: campaign.startHour,
-            endHour: campaign.endHour,
-            testEmail: campaign.testEmail,
-            enabled: campaign.enabled,
-          }
-        : null,
+      senderDailyLimit: app?.senderDailyLimit ?? LIMITS.PRIMARY_SENDER_DAILY,
+      profileFields: await this.getProfileFields(userId),
     };
   }
 }

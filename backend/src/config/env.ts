@@ -16,6 +16,8 @@ const schema = z.object({
   UPLOAD_DIR: z.string().default("./uploads"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   TEST_EMAIL: z.string().optional().default(""),
+  /** "1" runs the API without the send/inbox scheduler, e.g. a local UI pointed at a shared DB. */
+  DISABLE_SCHEDULER: z.enum(["0", "1"]).default("0"),
 });
 export type Env = z.infer<typeof schema>;
 export function loadEnv(src: NodeJS.ProcessEnv = process.env): Env { return schema.parse(src); }

@@ -2,11 +2,13 @@ import { pgTable, serial, integer, text, boolean, timestamp } from "drizzle-orm/
 import { users } from "./users.js";
 import { contacts } from "./contacts.js";
 import { emailTemplates } from "./templates.js";
+import { campaigns } from "./campaign.js";
 import { logStatus, failureType, campaignMode } from "./enums.js";
 export const emailLogs = pgTable("email_logs", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   contactId: integer("contact_id").references(() => contacts.id, { onDelete: "cascade" }),
+  campaignId: integer("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
   templateId: integer("template_id").references(() => emailTemplates.id, { onDelete: "set null" }),
   subject: text("subject").notNull(),
   body: text("body").notNull(),

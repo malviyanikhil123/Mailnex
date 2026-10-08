@@ -24,7 +24,13 @@ export interface ContactRow {
 
 export interface CampaignPort {
   getContact(id: number): Promise<ContactRow | null>;
-  getSettings(): Promise<{ mode: string; testEmail: string | null } | null>;
+  getSettings(): Promise<{
+    mode: string;
+    testEmail: string | null;
+    language?: string;
+    aiEnabled?: boolean;
+    aiInstructions?: string | null;
+  } | null>;
   setState(state: "RUNNING" | "PAUSED" | "STOPPED" | "IDLE"): Promise<unknown>;
   markContactProcessing(id: number): Promise<void>;
   markContactSent(id: number, sentAt: Date): Promise<void>;
@@ -50,6 +56,8 @@ export interface SettingsPort {
   buildSignature(profile: CandidateProfile): string;
   getResumeAttachment?(resumeId?: number | null): Promise<ResumeAttachment | null>;
   getResumePath(resumeId?: number | null): Promise<string | null>;
+  /** Custom "My Profile" fields as template variables ({{key}} → value). */
+  getProfileVars?(): Promise<Record<string, string>>;
 }
 
 export interface PersonalizeFn {
@@ -57,10 +65,13 @@ export interface PersonalizeFn {
     template: { subject: string; body: string };
     vars: { company: string; location: string; candidate: { name: string; email?: string } };
     apiKey?: string;
+    language?: string;
+    instructions?: string;
   }): Promise<{ subject: string; body: string; aiUsed: boolean }>;
 }
 
 export interface LogInput {
+  campaignId?: number | null;
   contactId: number;
   templateId: number | null;
   subject: string;
@@ -168,7 +179,10 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
       : profile.skills.trim()
     : "";
 
+  // Custom profile fields go first so the built-in variables always win.
+  const customVars = (await deps.settings.getProfileVars?.()) ?? {};
   const flatVars: Record<string, string> = {
+    ...customVars,
     company: contact.companyName,
     location: contact.location ?? "",
     candidateName: profile.name ?? "",
@@ -193,7 +207,8 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
     body: interpolate(template.body, flatVars),
   };
 
-  const apiKey = await deps.settings.getGeminiKey();
+  // AI enhancement is per campaign; with it off the rendered template is sent as written.
+  const apiKey = settings?.aiEnabled === false ? "" : await deps.settings.getGeminiKey();
   const personalized = await deps.personalize({
     template: rendered,
     vars: {
@@ -202,6 +217,8 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
       candidate: { name: profile.name ?? "", email: profile.email },
     },
     apiKey: apiKey || undefined,
+    language: settings?.language,
+    instructions: settings?.aiInstructions ?? undefined,
   });
 
   const subject = personalized.subject;

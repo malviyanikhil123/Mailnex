@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { campaignTick, type CampaignTickDeps } from "./tick.js";
+import { campaignTick, senderTick, type CampaignTickDeps } from "./tick.js";
 
 const IN_WINDOW = new Date(2026, 5, 18, 10, 0, 0, 0); // 10:00, inside 9-18
 const OUT_WINDOW = new Date(2026, 5, 18, 20, 0, 0, 0); // 20:00, outside
@@ -59,5 +59,21 @@ describe("campaignTick", () => {
     await campaignTick(deps, IN_WINDOW);
     expect(runSendJob).toHaveBeenCalledTimes(1);
     expect(markQueue).toHaveBeenNthCalledWith(2, 100, "DONE");
+  });
+
+  it("sends only the earliest due email across campaigns sharing a sender", async () => {
+    const a = makeDeps({ due: [{ id: 1, contactId: 11, scheduledAt: new Date(2026, 5, 18, 9, 40) } as any] });
+    const b = makeDeps({ due: [{ id: 2, contactId: 22, scheduledAt: new Date(2026, 5, 18, 9, 10) } as any] });
+    await senderTick([a.deps, b.deps], IN_WINDOW);
+    expect(b.runSendJob).toHaveBeenCalledWith(22);
+    expect(a.runSendJob).not.toHaveBeenCalled();
+  });
+
+  it("skips campaigns that are not RUNNING when picking across a sender", async () => {
+    const paused = makeDeps({ state: "PAUSED" });
+    const running = makeDeps({ due: [{ id: 3, contactId: 33 }] });
+    await senderTick([paused.deps, running.deps], IN_WINDOW);
+    expect(paused.runSendJob).not.toHaveBeenCalled();
+    expect(running.runSendJob).toHaveBeenCalledWith(33);
   });
 });

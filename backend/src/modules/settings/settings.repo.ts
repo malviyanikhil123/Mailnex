@@ -1,19 +1,18 @@
 import { db } from "../../db/index.js";
-import { appSettings } from "../../db/schema/settings.js";
-import { campaignSettings } from "../../db/schema/campaign.js";
+import { appSettings, profileFields } from "../../db/schema/settings.js";
 import { resumes } from "../../db/schema/resumes.js";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 
 export type AppSettings = typeof appSettings.$inferSelect;
-export type CampaignSettings = typeof campaignSettings.$inferSelect;
+export type ProfileField = typeof profileFields.$inferSelect;
 export type Resume = typeof resumes.$inferSelect;
 
-/** Repository for per-user app_settings, campaign_settings, and resumes tables. */
+/** Repository for per-user app_settings, profile_fields, and resumes tables. */
 export interface ISettingsRepo {
   getApp(userId: number): Promise<AppSettings | null>;
   patchApp(userId: number, patch: Partial<AppSettings>): Promise<AppSettings>;
-  getCampaign(userId: number): Promise<CampaignSettings | null>;
-  patchCampaign(userId: number, patch: Partial<CampaignSettings>): Promise<CampaignSettings>;
+  listProfileFields(userId: number): Promise<ProfileField[]>;
+  replaceProfileFields(userId: number, fields: { key: string; label: string; value: string }[]): Promise<ProfileField[]>;
   listResumes(userId: number): Promise<Resume[]>;
   getResume(userId: number, resumeId: number): Promise<Resume | null>;
   addResume(userId: number, name: string, fileName: string, filePath: string): Promise<Resume>;
@@ -43,26 +42,26 @@ export class SettingsRepo implements ISettingsRepo {
     return row;
   }
 
-  async getCampaign(userId: number): Promise<CampaignSettings | null> {
-    const [row] = await db.select().from(campaignSettings).where(eq(campaignSettings.userId, userId)).limit(1);
-    return row ?? null;
+  async listProfileFields(userId: number): Promise<ProfileField[]> {
+    return db
+      .select()
+      .from(profileFields)
+      .where(eq(profileFields.userId, userId))
+      .orderBy(asc(profileFields.sortOrder), asc(profileFields.id));
   }
 
-  async patchCampaign(userId: number, patch: Partial<CampaignSettings>): Promise<CampaignSettings> {
-    const existing = await this.getCampaign(userId);
-    if (!existing) {
-      const [row] = await db
-        .insert(campaignSettings)
-        .values({ ...patch, userId, updatedAt: new Date() })
+  async replaceProfileFields(
+    userId: number,
+    fields: { key: string; label: string; value: string }[],
+  ): Promise<ProfileField[]> {
+    return db.transaction(async (tx) => {
+      await tx.delete(profileFields).where(eq(profileFields.userId, userId));
+      if (fields.length === 0) return [];
+      return tx
+        .insert(profileFields)
+        .values(fields.map((f, i) => ({ ...f, userId, sortOrder: i })))
         .returning();
-      return row;
-    }
-    const [row] = await db
-      .update(campaignSettings)
-      .set({ ...patch, updatedAt: new Date() })
-      .where(eq(campaignSettings.id, existing.id))
-      .returning();
-    return row;
+    });
   }
 
   async listResumes(userId: number): Promise<Resume[]> {

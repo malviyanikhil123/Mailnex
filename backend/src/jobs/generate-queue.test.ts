@@ -61,4 +61,16 @@ describe("generateDailyQueue", () => {
     expect(await generateDailyQueue(deps, NOW)).toBe(5);
     expect(enqueue.mock.calls[0][0]).toHaveLength(5);
   });
+
+  it("never enqueues more than the shared sender account can still take today", async () => {
+    const { deps, enqueue } = makeDeps({ dailyLimit: 50, selectable: 40 });
+    await generateDailyQueue({ ...deps, senderRemaining: async () => 7 }, NOW);
+    expect(enqueue.mock.calls[0][0]).toHaveLength(7);
+  });
+
+  it("does nothing when the sender account is used up by other campaigns", async () => {
+    const { deps, enqueue } = makeDeps();
+    expect(await generateDailyQueue({ ...deps, senderRemaining: async () => 0 }, NOW)).toBe(0);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
 });

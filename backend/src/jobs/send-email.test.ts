@@ -11,6 +11,10 @@ function makeDeps(overrides?: {
   sendImpl?: () => Promise<{ messageId: string }>;
   template?: { id: number; subject: string; body: string } | null;
   geminiKey?: string;
+  aiEnabled?: boolean;
+  language?: string;
+  aiInstructions?: string | null;
+  profileVars?: Record<string, string>;
 }): { deps: SendEmailDeps; logs: LogInput[]; send: ReturnType<typeof vi.fn>; campaign: any } {
   const logs: LogInput[] = [];
   const send = vi.fn(overrides?.sendImpl ?? (async () => ({ messageId: "mid-1" })));
@@ -27,6 +31,9 @@ function makeDeps(overrides?: {
     getSettings: vi.fn(async () => ({
       mode: overrides?.mode ?? "LIVE",
       testEmail: overrides?.testEmail ?? null,
+      language: overrides?.language,
+      aiEnabled: overrides?.aiEnabled,
+      aiInstructions: overrides?.aiInstructions,
     })),
     setState: vi.fn(async () => ({})),
     markContactProcessing: vi.fn(async () => {}),
@@ -52,6 +59,7 @@ function makeDeps(overrides?: {
       getCandidateProfile: vi.fn(async () => ({ name: "Nikhil", email: "n@x.dev" })),
       buildSignature: vi.fn(() => "Regards,\nNikhil"),
       getResumePath: vi.fn(async () => "/uploads/resume.pdf"),
+      getProfileVars: vi.fn(async () => overrides?.profileVars ?? {}),
     },
     personalize: vi.fn(async (input) => ({
       subject: input.template.subject,
@@ -234,5 +242,29 @@ describe("sendEmailJob", () => {
     expect(sent.html).toContain("+91 9876543210");
     expect(sent.html).toContain("alex@example.com");
     expect(sent.html).not.toContain("{{");
+  });
+
+  it("passes the campaign language and AI instructions to personalization", async () => {
+    const { deps } = makeDeps({ geminiKey: "key", language: "Hindi", aiInstructions: "Mention the offer" });
+    await sendEmailJob(1, deps);
+    expect(deps.personalize).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: "key", language: "Hindi", instructions: "Mention the offer" }),
+    );
+  });
+
+  it("with AI enhancement off, never hands the Gemini key to personalization", async () => {
+    const { deps } = makeDeps({ geminiKey: "key", aiEnabled: false });
+    await sendEmailJob(1, deps);
+    expect(deps.settings.getGeminiKey).not.toHaveBeenCalled();
+    expect(deps.personalize).toHaveBeenCalledWith(expect.objectContaining({ apiKey: undefined }));
+  });
+
+  it("fills custom profile fields into the template but never lets them shadow built-ins", async () => {
+    const { deps, send } = makeDeps({
+      template: { id: 7, subject: "{{offer}} for {{company}}", body: "Hi" },
+      profileVars: { offer: "20% off", company: "WRONG" },
+    });
+    await sendEmailJob(1, deps);
+    expect(send.mock.calls[0][0].subject).toBe("20% off for Acme");
   });
 });

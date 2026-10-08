@@ -1,6 +1,8 @@
 export const LIMITS = {
   DAILY: 50, START_HOUR: 9, END_HOUR: 18, MAX_RETRIES: 3,
   RETRY_DELAYS_MS: [3_600_000, 21_600_000, 86_400_000] as const,
+  /** Default daily cap of the primary Gmail across all campaigns sending from it. */
+  PRIMARY_SENDER_DAILY: 100,
 } as const;
 
 export const INBOX = {

@@ -1,12 +1,14 @@
 import { apiClient } from "./client";
-import type { CampaignStatus, CampaignMode } from "../types/api";
+import type { Campaign, CampaignInput } from "../types/api";
 
 export const campaignApi = {
-  status: () => apiClient.get<CampaignStatus>("/campaign/status").then((r) => r.data),
-  start: () => apiClient.post<CampaignStatus>("/campaign/start").then((r) => r.data),
-  pause: () => apiClient.post<CampaignStatus>("/campaign/pause").then((r) => r.data),
-  resume: () => apiClient.post<CampaignStatus>("/campaign/resume").then((r) => r.data),
-  stop: () => apiClient.post<CampaignStatus>("/campaign/stop").then((r) => r.data),
-  setMode: (mode: CampaignMode) =>
-    apiClient.patch<CampaignStatus>("/campaign/mode", { mode }).then((r) => r.data),
+  list: () => apiClient.get<{ campaigns: Campaign[] }>("/campaigns").then((r) => r.data.campaigns),
+  create: (input: CampaignInput) => apiClient.post<Campaign>("/campaigns", input).then((r) => r.data),
+  update: (id: number, input: Partial<CampaignInput>) =>
+    apiClient.patch<Campaign>(`/campaigns/${id}`, input).then((r) => r.data),
+  remove: (id: number) => apiClient.delete(`/campaigns/${id}`).then((r) => r.data),
+  start: (id: number) => apiClient.post<Campaign>(`/campaigns/${id}/start`).then((r) => r.data),
+  pause: (id: number) => apiClient.post<Campaign>(`/campaigns/${id}/pause`).then((r) => r.data),
+  resume: (id: number) => apiClient.post<Campaign>(`/campaigns/${id}/resume`).then((r) => r.data),
+  stop: (id: number) => apiClient.post<Campaign>(`/campaigns/${id}/stop`).then((r) => r.data),
 };

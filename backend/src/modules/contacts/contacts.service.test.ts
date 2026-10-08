@@ -9,7 +9,7 @@ import { dbEnabled } from "../../test-helpers/db.js";
 // ---- Unit tests for import service (mocked repo) ----
 
 describe("ContactsService.importFromFile (unit, mocked repo)", () => {
-  it("returns correct summary and calls recordImport with counts", async () => {
+  it("returns correct summary, links contacts to the import and stores its counts", async () => {
     const tmpFile = path.join(os.tmpdir(), `${crypto.randomUUID()}.xlsx`);
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Sheet1");
@@ -22,7 +22,8 @@ describe("ContactsService.importFromFile (unit, mocked repo)", () => {
     await wb.xlsx.writeFile(tmpFile);
 
     const mockBulkInsert = vi.fn().mockResolvedValue({ inserted: 3 });
-    const mockRecordImport = vi.fn().mockResolvedValue({ id: 1 });
+    const mockRecordImport = vi.fn().mockResolvedValue({ id: 42 });
+    const mockUpdateCounts = vi.fn().mockResolvedValue(undefined);
 
     const { ContactsService } = await import("./contacts.service.js");
     const { ContactsRepo } = await import("./contacts.repo.js");
@@ -30,13 +31,14 @@ describe("ContactsService.importFromFile (unit, mocked repo)", () => {
     const fakeRepo = {
       bulkInsert: mockBulkInsert,
       recordImport: mockRecordImport,
+      updateImportCounts: mockUpdateCounts,
     } as unknown as InstanceType<typeof ContactsRepo>;
 
     const service = new ContactsService(fakeRepo);
     const jobId = crypto.randomUUID();
     const userId = 1;
 
-    const summary = await service.importFromFile(userId, tmpFile, "test.xlsx", jobId);
+    const summary = await service.importFromFile(userId, tmpFile, "test.xlsx", jobId, "Follow-ups");
 
     expect(summary.total).toBe(5);
     expect(summary.invalid).toBe(1);
@@ -44,17 +46,16 @@ describe("ContactsService.importFromFile (unit, mocked repo)", () => {
     expect(summary.imported).toBe(3);
     expect(summary.skipped).toBe(0);
 
-    expect(mockBulkInsert).toHaveBeenCalledOnce();
     expect(mockRecordImport).toHaveBeenCalledOnce();
     expect(mockRecordImport).toHaveBeenCalledWith(
       userId,
-      expect.objectContaining({
-        fileName: "test.xlsx",
-        total: 5,
-        imported: 3,
-        invalid: 1,
-        duplicate: 1,
-      }),
+      expect.objectContaining({ name: "Follow-ups", fileName: "test.xlsx", total: 5 }),
+    );
+    expect(mockBulkInsert).toHaveBeenCalledOnce();
+    expect(mockBulkInsert).toHaveBeenCalledWith(userId, expect.any(Array), 42);
+    expect(mockUpdateCounts).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ total: 5, imported: 3, invalid: 1, duplicate: 1 }),
     );
 
     const { importProgress } = await import("./contacts.service.js");
@@ -77,7 +78,8 @@ describe("ContactsService.importFromFile (unit, mocked repo)", () => {
 
     const fakeRepo = {
       bulkInsert: vi.fn().mockRejectedValue(new Error("DB down")),
-      recordImport: vi.fn(),
+      recordImport: vi.fn().mockResolvedValue({ id: 7 }),
+      deleteImport: vi.fn().mockResolvedValue(undefined),
     } as unknown as InstanceType<typeof ContactsRepo>;
 
     const service = new ContactsService(fakeRepo);

@@ -36,9 +36,11 @@ export async function contactsController(app: FastifyInstance) {
       await pipeline(data.file, createWriteStream(tmpPath));
 
       const fileName = data.filename;
+      const rawName = (data.fields?.name as { value?: unknown } | undefined)?.value;
+      const name = rawName ? String(rawName).slice(0, 120) : undefined;
 
       // Fire-and-forget: do not await
-      contactsService.importFromFile(userId, tmpPath, fileName, jobId).catch((err: unknown) => {
+      contactsService.importFromFile(userId, tmpPath, fileName, jobId, name).catch((err: unknown) => {
         logger.error({ err, jobId }, "Import failed");
       });
 

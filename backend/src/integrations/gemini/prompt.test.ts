@@ -41,6 +41,16 @@ describe("buildPersonalizationPrompt()", () => {
     expect(prompt).toContain("Alice Smith");
   });
 
+  it("adds the language rule and sender instructions only when given", () => {
+    const plain = buildPersonalizationPrompt(baseInput);
+    expect(plain).not.toContain("must be written in");
+    expect(plain).not.toContain("ADDITIONAL INSTRUCTIONS");
+
+    const prompt = buildPersonalizationPrompt({ ...baseInput, language: "Hindi", instructions: "Mention the 20% launch offer." });
+    expect(prompt).toContain("must be written in Hindi");
+    expect(prompt).toContain("Mention the 20% launch offer.");
+  });
+
   it("includes the 'do not invent facts' constraint", () => {
     const prompt = buildPersonalizationPrompt(baseInput);
     // case-insensitive check for some variant of "invent"

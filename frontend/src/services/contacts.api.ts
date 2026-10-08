@@ -4,6 +4,7 @@ import type { Contact, ImportSummary, Paginated } from "../types/api";
 export interface ListContactsParams {
   search?: string;
   status?: string;
+  importId?: number;
   page?: number;
   limit?: number;
 }
@@ -32,8 +33,10 @@ export const contactsApi = {
   remove: (id: number) => apiClient.delete(`/contacts/${id}`).then((r) => r.data),
   imports: () =>
     apiClient.get<{ imports: ImportSummary[] }>("/contacts/imports").then((r) => r.data.imports),
-  importFile: (file: File) => {
+  importFile: (file: File, name?: string) => {
     const form = new FormData();
+    // Fields before the file: the backend reads them from the multipart stream.
+    if (name) form.append("name", name);
     form.append("file", file);
     return apiClient
       .post<{ jobId: string }>("/contacts/import", form)

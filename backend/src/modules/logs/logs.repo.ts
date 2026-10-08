@@ -25,6 +25,7 @@ export class LogsRepo {
   async create(userId: number, log: LogInput): Promise<void> {
     await db.insert(emailLogs).values({
       userId,
+      campaignId: log.campaignId ?? null,
       contactId: log.contactId,
       templateId: log.templateId ?? null,
       subject: log.subject,

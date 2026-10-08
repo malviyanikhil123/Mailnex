@@ -7,6 +7,7 @@
  *  - Keep it concise and professional.
  *  - NOT invent facts.
  *  - Return STRICT JSON { "subject": string, "body": string } — nothing else.
+ *  - Optionally write in the campaign's language and follow its extra instructions.
  */
 
 export interface PersonalizationPromptInput {
@@ -15,12 +16,25 @@ export interface PersonalizationPromptInput {
   company: string;
   location: string;
   candidateName: string;
+  /** Language the final email must be in (campaign setting). */
+  language?: string;
+  /** Free-text guidance from the campaign (tone, offer, audience…). */
+  instructions?: string;
 }
 
 export function buildPersonalizationPrompt(input: PersonalizationPromptInput): string {
   const { subject, body, company, location, candidateName } = input;
+  const language = input.language?.trim();
+  const instructions = input.instructions?.trim();
 
-  return `You are an expert job-application email personalizer.
+  const languageRule = language
+    ? `\n7. The final subject and body must be written in ${language}. If the original is in another language, translate it faithfully into ${language} (translation does not count as changing the content).`
+    : "";
+  const instructionsBlock = instructions
+    ? `\nADDITIONAL INSTRUCTIONS FROM THE SENDER (follow them unless they conflict with rules 4 or 6):\n${instructions}\n`
+    : "";
+
+  return `You are an expert outreach email personalizer.
 
 Your task is to lightly personalize an existing email template for a specific company and location.
 
@@ -31,8 +45,8 @@ RULES (must follow exactly):
 4. Do NOT invent facts, credentials, or claims not present in the original template.
 5. Keep the rest of the email body identical to the original.
 6. Return ONLY a strict JSON object with exactly these two fields — no markdown, no code fences, no extra keys:
-   { "subject": "<personalized subject>", "body": "<full personalized email body>" }
-
+   { "subject": "<personalized subject>", "body": "<full personalized email body>" }${languageRule}
+${instructionsBlock}
 CANDIDATE NAME: ${candidateName}
 COMPANY: ${company}
 LOCATION: ${location}

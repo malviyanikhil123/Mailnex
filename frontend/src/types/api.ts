@@ -42,6 +42,7 @@ export interface Paginated<T> {
 
 export interface ImportSummary {
   id: number;
+  name: string | null;
   fileName: string;
   totalRows: number;
   importedRows: number;
@@ -49,6 +50,9 @@ export interface ImportSummary {
   duplicateRows: number;
   invalidRows: number;
   createdAt: string;
+  /** Contacts that currently belong to this import (listing endpoint only). */
+  contactCount?: number;
+  pendingCount?: number;
 }
 
 export interface Resume {
@@ -75,13 +79,47 @@ export interface Template {
 export type CampaignMode = "DRAFT" | "TEST" | "LIVE";
 export type CampaignState = "IDLE" | "RUNNING" | "PAUSED" | "STOPPED";
 
-export interface CampaignStatus {
-  state: CampaignState;
+/** Editable campaign fields (create / update payload). */
+export interface CampaignInput {
+  name: string;
+  importId: number | null;
+  /** null = the primary Gmail from Settings. */
+  senderAccountId: number | null;
+  templateIds: number[];
   mode: CampaignMode;
-  quotaToday: number;
   dailyLimit: number;
+  startHour: number;
+  endHour: number;
+  testEmail: string | null;
+  language: string;
+  aiEnabled: boolean;
+  aiInstructions: string | null;
+}
+
+export interface Campaign extends CampaignInput {
+  id: number;
+  state: CampaignState;
+  importName: string | null;
+  quotaToday: number;
   nextScheduledAt: string | null;
   countsByStatus: Record<string, number>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SenderAccount {
+  id: number;
+  label: string;
+  email: string;
+  dailyLimit: number;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface ProfileField {
+  key: string;
+  label: string;
+  value: string;
 }
 
 export interface EmailLogRow {
@@ -145,15 +183,9 @@ export interface PublicSettings {
   geminiConfigured: boolean;
   candidate: CandidateProfile;
   resumeFileName: string | null;
-  campaign: {
-    mode: CampaignMode;
-    state: CampaignState;
-    dailyLimit: number;
-    startHour: number;
-    endHour: number;
-    testEmail: string | null;
-    enabled: boolean;
-  } | null;
+  /** Daily cap of the primary Gmail, shared by every campaign sending from it. */
+  senderDailyLimit: number;
+  profileFields: ProfileField[];
 }
 
 // ---------------------------------------------------------------------------

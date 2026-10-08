@@ -3,28 +3,20 @@ import { SettingsService } from "./settings.service.js";
 import type {
   ISettingsRepo,
   AppSettings,
-  CampaignSettings,
+  ProfileField,
 } from "./settings.repo.js";
 
 /** Stateful in-memory fake repo so encrypt→store→decrypt round-trips realistically. */
-function makeFakeRepo(): ISettingsRepo & { app: Partial<AppSettings>; campaign: Partial<CampaignSettings> } {
+function makeFakeRepo(): ISettingsRepo & { app: Partial<AppSettings>; fields: ProfileField[] } {
   const state = {
     app: { id: 1, userId: 1, emailProvider: "gmail", candidateProfile: "{}" } as Partial<AppSettings>,
-    campaign: {
-      id: 1,
-      userId: 1,
-      mode: "DRAFT",
-      state: "IDLE",
-      dailyLimit: 50,
-      startHour: 9,
-      endHour: 18,
-      testEmail: null,
-      enabled: false,
-    } as Partial<CampaignSettings>,
+    fields: [] as ProfileField[],
   };
   return {
     app: state.app,
-    campaign: state.campaign,
+    get fields() {
+      return state.fields;
+    },
     async getApp(_userId: number) {
       return state.app as AppSettings;
     },
@@ -32,12 +24,14 @@ function makeFakeRepo(): ISettingsRepo & { app: Partial<AppSettings>; campaign: 
       Object.assign(state.app, patch);
       return state.app as AppSettings;
     },
-    async getCampaign(_userId: number) {
-      return state.campaign as CampaignSettings;
+    async listProfileFields(_userId: number) {
+      return state.fields;
     },
-    async patchCampaign(_userId: number, patch) {
-      Object.assign(state.campaign, patch);
-      return state.campaign as CampaignSettings;
+    async replaceProfileFields(userId: number, fields) {
+      state.fields = fields.map((f, i) => ({
+        ...f, id: i + 1, userId, sortOrder: i, createdAt: new Date(), updatedAt: new Date(),
+      }));
+      return state.fields;
     },
     async listResumes(_userId: number) {
       return [];
@@ -93,7 +87,8 @@ describe("SettingsService", () => {
     const serialized = JSON.stringify(pub);
     expect(serialized).not.toContain("secretpass");
     expect(serialized).not.toContain("secretkey");
-    expect(pub.campaign?.mode).toBe("DRAFT");
+    expect(pub.senderDailyLimit).toBe(100);
+    expect(pub.profileFields).toEqual([]);
   });
 
   it("updateCandidate merges with the existing profile", async () => {
@@ -124,16 +119,22 @@ describe("SettingsService", () => {
     expect(sig).toContain("Portfolio: https://x.dev");
   });
 
-  it("updateCampaign updates campaign row and routes emailProvider to app settings", async () => {
-    const updated = await service.updateCampaign(userId, {
-      mode: "TEST",
-      dailyLimit: 25,
-      testEmail: "test@example.com",
-      emailProvider: "gmail",
+  it("updateSending stores the primary Gmail daily cap", async () => {
+    await service.updateSending(userId, { senderDailyLimit: 40 });
+    expect(await service.getSenderDailyLimit(userId)).toBe(40);
+  });
+
+  it("replaceProfileFields stores custom fields and exposes them as template vars", async () => {
+    const saved = await service.replaceProfileFields(userId, {
+      fields: [
+        { key: "company_name", label: "Company", value: "Acme" },
+        { key: "offer", label: "Offer", value: "20% off" },
+      ],
     });
-    expect(updated.mode).toBe("TEST");
-    expect(updated.dailyLimit).toBe(25);
-    expect(updated.testEmail).toBe("test@example.com");
-    expect(repo.app.emailProvider).toBe("gmail");
+    expect(saved).toEqual([
+      { key: "company_name", label: "Company", value: "Acme" },
+      { key: "offer", label: "Offer", value: "20% off" },
+    ]);
+    expect(await service.getProfileVars(userId)).toEqual({ company_name: "Acme", offer: "20% off" });
   });
 });
