@@ -5,6 +5,7 @@ import { formatEmailHtml } from "../utils/format-email.js";
 import { logger } from "../utils/logger.js";
 import { classifyFailure } from "../integrations/email/classify-failure.js";
 import type { EmailProvider } from "../integrations/email/provider.js";
+import type { AiModelConfig } from "../integrations/ai/model-factory.js";
 import type { CandidateProfile } from "../modules/settings/settings.schema.js";
 import { buildSenderVars } from "./sender-vars.js";
 import { buildContactVars } from "./contact-vars.js";
@@ -32,6 +33,9 @@ export interface CampaignPort {
     language?: string;
     aiEnabled?: boolean;
     aiInstructions?: string | null;
+    /** null = the user's default AI provider / that provider's saved model. */
+    aiProvider?: string | null;
+    aiModel?: string | null;
   } | null>;
   setState(state: "RUNNING" | "PAUSED" | "STOPPED" | "IDLE"): Promise<unknown>;
   markContactProcessing(id: number): Promise<void>;
@@ -53,7 +57,8 @@ export interface ResumeAttachment {
 }
 
 export interface SettingsPort {
-  getGeminiKey(): Promise<string>;
+  /** Provider, key and model for the campaign's choice; null when no matching key is saved. */
+  getAiConfig(choice: { provider: string | null; model: string | null }): Promise<AiModelConfig | null>;
   getCandidateProfile(): Promise<CandidateProfile>;
   buildSignature(profile: CandidateProfile): string;
   getResumeAttachment?(resumeId?: number | null): Promise<ResumeAttachment | null>;
@@ -66,7 +71,7 @@ export interface PersonalizeFn {
   (input: {
     template: { subject: string; body: string };
     vars: { company: string; location: string; candidate: { name: string; email?: string } };
-    apiKey?: string;
+    ai?: AiModelConfig;
     language?: string;
     instructions?: string;
   }): Promise<{ subject: string; body: string; aiUsed: boolean }>;
@@ -170,7 +175,7 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
   }
 
   // Build the fully-rendered template (signature/name/company/location), then
-  // let Gemini personalize on top (with template fallback inside personalize()).
+  // let the AI personalize on top (with template fallback inside personalize()).
   const profile = await deps.settings.getCandidateProfile();
   const signature = deps.settings.buildSignature(profile);
 
@@ -186,8 +191,11 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
     body: interpolate(template.body, flatVars),
   };
 
-  // AI enhancement is per campaign; with it off the rendered template is sent as written.
-  const apiKey = settings?.aiEnabled === false ? "" : await deps.settings.getGeminiKey();
+  // AI enhancement is per campaign; with it off, or with no key saved for the chosen
+  // provider, the rendered template is sent as written.
+  const ai = settings?.aiEnabled === false
+    ? null
+    : await deps.settings.getAiConfig({ provider: settings?.aiProvider ?? null, model: settings?.aiModel ?? null });
   const personalized = await deps.personalize({
     template: rendered,
     vars: {
@@ -195,7 +203,7 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
       location: contact.location ?? "",
       candidate: { name: profile.name ?? "", email: profile.email },
     },
-    apiKey: apiKey || undefined,
+    ai: ai ?? undefined,
     language: settings?.language,
     instructions: settings?.aiInstructions ?? undefined,
   });

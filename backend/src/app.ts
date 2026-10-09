@@ -15,6 +15,7 @@ import { sendersRoutes } from "./modules/senders/senders.routes.js";
 import { logsRoutes } from "./modules/logs/logs.routes.js";
 import { analyticsRoutes } from "./modules/analytics/analytics.routes.js";
 import { inboxRoutes } from "./modules/inbox/inbox.routes.js";
+import { aiProvidersRoutes } from "./modules/ai-providers/ai-providers.routes.js";
 
 export async function buildApp() {
   const app = Fastify({ logger: false });
@@ -44,5 +45,6 @@ export async function buildApp() {
   await app.register(logsRoutes, { prefix: "/logs" });
   await app.register(analyticsRoutes, { prefix: "/analytics" });
   await app.register(inboxRoutes, { prefix: "/inbox" });
+  await app.register(aiProvidersRoutes, { prefix: "/ai-providers" });
   return app;
 }

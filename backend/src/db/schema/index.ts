@@ -10,3 +10,4 @@ export * from "./settings.js";
 export * from "./users.js";
 export * from "./resumes.js";
 export * from "./inbox.js";
+export * from "./ai.js";

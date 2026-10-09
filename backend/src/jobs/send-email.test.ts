@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { sendEmailJob, type SendEmailDeps, type LogInput } from "./send-email.js";
+import type { AiModelConfig } from "../integrations/ai/model-factory.js";
 
 const NOW = new Date(2026, 5, 18, 10, 0, 0, 0);
 const HOUR = 3_600_000;
@@ -10,8 +11,11 @@ function makeDeps(overrides?: {
   retryCount?: number;
   sendImpl?: () => Promise<{ messageId: string }>;
   template?: { id: number; subject: string; body: string } | null;
-  geminiKey?: string;
+  /** What the settings port resolves for the campaign's provider choice. */
+  aiConfig?: AiModelConfig | null;
   aiEnabled?: boolean;
+  aiProvider?: string | null;
+  aiModel?: string | null;
   language?: string;
   aiInstructions?: string | null;
   profileVars?: Record<string, string>;
@@ -34,6 +38,8 @@ function makeDeps(overrides?: {
       language: overrides?.language,
       aiEnabled: overrides?.aiEnabled,
       aiInstructions: overrides?.aiInstructions,
+      aiProvider: overrides?.aiProvider,
+      aiModel: overrides?.aiModel,
     })),
     setState: vi.fn(async () => ({})),
     markContactProcessing: vi.fn(async () => {}),
@@ -55,7 +61,7 @@ function makeDeps(overrides?: {
       ),
     },
     settings: {
-      getGeminiKey: vi.fn(async () => overrides?.geminiKey ?? ""),
+      getAiConfig: vi.fn(async () => overrides?.aiConfig ?? null),
       getCandidateProfile: vi.fn(async () => ({ name: "Nikhil", email: "n@x.dev" })),
       buildSignature: vi.fn(() => "Regards,\nNikhil"),
       getResumePath: vi.fn(async () => "/uploads/resume.pdf"),
@@ -245,18 +251,39 @@ describe("sendEmailJob", () => {
   });
 
   it("passes the campaign language and AI instructions to personalization", async () => {
-    const { deps } = makeDeps({ geminiKey: "key", language: "Hindi", aiInstructions: "Mention the offer" });
+    const ai: AiModelConfig = { provider: "google", apiKey: "key", model: "gemini-3.5-flash-lite" };
+    const { deps } = makeDeps({ aiConfig: ai, language: "Hindi", aiInstructions: "Mention the offer" });
     await sendEmailJob(1, deps);
     expect(deps.personalize).toHaveBeenCalledWith(
-      expect.objectContaining({ apiKey: "key", language: "Hindi", instructions: "Mention the offer" }),
+      expect.objectContaining({ ai, language: "Hindi", instructions: "Mention the offer" }),
     );
   });
 
-  it("with AI enhancement off, never hands the Gemini key to personalization", async () => {
-    const { deps } = makeDeps({ geminiKey: "key", aiEnabled: false });
+  it("resolves the campaign's own provider and model, null meaning the user's default", async () => {
+    const ai: AiModelConfig = { provider: "anthropic", apiKey: "key", model: "claude-sonnet-5-5" };
+    const { deps } = makeDeps({ aiConfig: ai, aiProvider: "anthropic", aiModel: "claude-sonnet-5-5" });
     await sendEmailJob(1, deps);
-    expect(deps.settings.getGeminiKey).not.toHaveBeenCalled();
-    expect(deps.personalize).toHaveBeenCalledWith(expect.objectContaining({ apiKey: undefined }));
+    expect(deps.settings.getAiConfig).toHaveBeenCalledWith({ provider: "anthropic", model: "claude-sonnet-5-5" });
+    expect(deps.personalize).toHaveBeenCalledWith(expect.objectContaining({ ai }));
+
+    const plain = makeDeps({ aiConfig: ai });
+    await sendEmailJob(1, plain.deps);
+    expect(plain.deps.settings.getAiConfig).toHaveBeenCalledWith({ provider: null, model: null });
+  });
+
+  it("with AI on but no key saved, sends the rendered template without AI", async () => {
+    const { deps, send } = makeDeps({ aiConfig: null });
+    await sendEmailJob(1, deps);
+    expect(deps.personalize).toHaveBeenCalledWith(expect.objectContaining({ ai: undefined }));
+    expect(send.mock.calls[0][0].subject).toBe("Hi Acme");
+  });
+
+  it("with AI enhancement off, never resolves an AI key for personalization", async () => {
+    const ai: AiModelConfig = { provider: "openai", apiKey: "key", model: "gpt-5.4-mini" };
+    const { deps } = makeDeps({ aiConfig: ai, aiEnabled: false });
+    await sendEmailJob(1, deps);
+    expect(deps.settings.getAiConfig).not.toHaveBeenCalled();
+    expect(deps.personalize).toHaveBeenCalledWith(expect.objectContaining({ ai: undefined }));
   });
 
   it("fills custom profile fields into the template but never lets them shadow built-ins", async () => {

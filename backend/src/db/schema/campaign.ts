@@ -39,6 +39,10 @@ export const campaigns = pgTable("campaigns", {
   language: text("language").notNull().default("English"),
   aiEnabled: boolean("ai_enabled").notNull().default(true),
   aiInstructions: text("ai_instructions"),
+  // AI provider + model for personalization; null = the user's default provider and
+  // that provider's saved model. A model is only ever set together with a provider.
+  aiProvider: text("ai_provider"),
+  aiModel: text("ai_model"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => ({

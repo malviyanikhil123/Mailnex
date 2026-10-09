@@ -7,9 +7,9 @@ import {
   type ISettingsRepo,
   type ProfileField,
 } from "./settings.repo.js";
+import { aiProvidersService } from "../ai-providers/ai-providers.service.js";
 import type {
   UpdateGmailInput,
-  UpdateGeminiInput,
   CandidateProfile,
   UpdateSendingInput,
   ProfileFieldsInput,
@@ -25,7 +25,8 @@ export interface PublicSettings {
   emailProvider: string;
   gmailEmail: string | null;
   gmailConfigured: boolean;
-  geminiConfigured: boolean;
+  /** True when the user has saved an API key for at least one AI provider. */
+  aiConfigured: boolean;
   candidate: CandidateProfile;
   resumeFileName: string | null;
   /** Daily cap of the primary Gmail, shared by every campaign sending from it. */
@@ -33,8 +34,16 @@ export interface PublicSettings {
   profileFields: Pick<ProfileField, "key" | "label" | "value">[];
 }
 
+/** Whether the user has any AI provider key (keys live in the ai-providers module). */
+export interface AiKeysLookup {
+  hasAny(userId: number): Promise<boolean>;
+}
+
 export class SettingsService {
-  constructor(private repo: ISettingsRepo = settingsRepo) {}
+  constructor(
+    private repo: ISettingsRepo = settingsRepo,
+    private aiKeys: AiKeysLookup = aiProvidersService,
+  ) {}
 
   // ---- secret reads (decrypt) ------------------------------------------------
 
@@ -42,12 +51,6 @@ export class SettingsService {
     const app = await this.repo.getApp(userId);
     if (!app?.gmailEmail || !app.gmailAppPasswordEnc) return null;
     return { email: app.gmailEmail, password: decrypt(app.gmailAppPasswordEnc) };
-  }
-
-  async getGeminiKey(userId: number): Promise<string> {
-    const app = await this.repo.getApp(userId);
-    if (!app?.geminiApiKeyEnc) return "";
-    return decrypt(app.geminiApiKeyEnc);
   }
 
   async getEmailProviderName(userId: number): Promise<string> {
@@ -117,10 +120,6 @@ export class SettingsService {
     });
   }
 
-  async updateGemini(userId: number, input: UpdateGeminiInput): Promise<void> {
-    await this.repo.patchApp(userId, { geminiApiKeyEnc: encrypt(input.apiKey) });
-  }
-
   async updateCandidate(userId: number, profile: CandidateProfile): Promise<CandidateProfile> {
     const current = await this.getCandidateProfile(userId);
     const merged = { ...current, ...profile };
@@ -173,7 +172,7 @@ export class SettingsService {
       emailProvider: app?.emailProvider ?? "gmail",
       gmailEmail: app?.gmailEmail ?? null,
       gmailConfigured: !!(app?.gmailEmail && app.gmailAppPasswordEnc),
-      geminiConfigured: !!app?.geminiApiKeyEnc,
+      aiConfigured: await this.aiKeys.hasAny(userId),
       candidate: await this.getCandidateProfile(userId),
       resumeFileName: app?.resumePath ? path.basename(app.resumePath) : null,
       senderDailyLimit: app?.senderDailyLimit ?? LIMITS.PRIMARY_SENDER_DAILY,

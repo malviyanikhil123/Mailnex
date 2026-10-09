@@ -1,5 +1,5 @@
 /**
- * Builds the constrained personalization prompt for the Gemini model.
+ * Builds the constrained personalization prompt (the same for every provider).
  *
  * The prompt instructs the model to:
  *  - Personalize ONLY the greeting and opening paragraph, and the subject line.
