@@ -36,6 +36,11 @@ export const refreshSchema = z.object({
   refreshToken: z.string().min(1).max(4096),
 });
 
+/** The refresh token identifies which session to revoke; without it nothing is revoked. */
+export const logoutSchema = z.object({
+  refreshToken: z.string().min(1).max(4096).optional(),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type RefreshInput = z.infer<typeof refreshSchema>;

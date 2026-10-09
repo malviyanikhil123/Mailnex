@@ -17,10 +17,15 @@ describe("AuthService (Multi-user Registration)", () => {
     };
 
     const mockRepo = {
-      findByEmail: vi.fn().mockResolvedValue(existingUser),
+      listByEmail: vi.fn().mockResolvedValue([existingUser]),
       findById: vi.fn().mockResolvedValue(null),
       setRefreshToken: vi.fn(),
       create: vi.fn(),
+      findSession: vi.fn(),
+      createSession: vi.fn(),
+      rotateSession: vi.fn(),
+      deleteSession: vi.fn(),
+      pruneSessions: vi.fn(),
     };
 
     const svc = new AuthService(mockRepo, stubSignAccess);
@@ -28,6 +33,8 @@ describe("AuthService (Multi-user Registration)", () => {
     await expect(svc.register("New User", "test@example.com", "Password@123")).rejects.toMatchObject({
       statusCode: 409,
     });
+    // The duplicate check is case-insensitive (the repo matches lower(email)).
+    expect(mockRepo.listByEmail).toHaveBeenCalledWith("test@example.com", 1);
     expect(mockRepo.create).not.toHaveBeenCalled();
   });
 });
