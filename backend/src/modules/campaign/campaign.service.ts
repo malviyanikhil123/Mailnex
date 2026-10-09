@@ -4,6 +4,8 @@ import { contactsRepo } from "../contacts/contacts.repo.js";
 import { templatesRepo } from "../templates/templates.repo.js";
 import { sendersRepo } from "../senders/senders.repo.js";
 import { sendersService } from "../senders/senders.service.js";
+import { aiProvidersService } from "../ai-providers/ai-providers.service.js";
+import { PROVIDERS, isAiProvider } from "../../integrations/ai/providers.js";
 import type { CreateCampaignInput, UpdateCampaignInput } from "./campaign.schema.js";
 
 export interface CampaignView extends Campaign {
@@ -21,6 +23,8 @@ export interface CampaignLookups {
   senderExists(userId: number, senderAccountId: number): Promise<boolean>;
   /** Daily cap of the sending account, or null when it is not usable (missing creds / inactive). */
   senderDailyLimit(userId: number, senderAccountId: number | null): Promise<number | null>;
+  /** Models a campaign may use with this AI provider, or null when the user has no key for it. */
+  aiProviderModels(userId: number, provider: string): Promise<string[] | null>;
 }
 
 export const campaignLookups: CampaignLookups = {
@@ -29,6 +33,7 @@ export const campaignLookups: CampaignLookups = {
     (await Promise.all(ids.map((id) => templatesRepo.getById(userId, id)))).every(Boolean),
   senderExists: async (userId, id) => !!(await sendersRepo.get(userId, id)),
   senderDailyLimit: async (userId, id) => (await sendersService.getCreds(userId, id))?.dailyLimit ?? null,
+  aiProviderModels: (userId, provider) => aiProvidersService.allowedModels(userId, provider),
 };
 
 function httpError(statusCode: number, message: string): Error & { statusCode: number } {
@@ -75,6 +80,7 @@ export class CampaignService {
 
   async create(userId: number, input: CreateCampaignInput): Promise<CampaignView> {
     await this.checkRefs(userId, input);
+    await this.checkAi(userId, input.aiProvider, input.aiModel);
     const { templateIds, ...values } = input;
     const created = await this.repo.create(userId, values as Parameters<CampaignRepo["create"]>[1]);
     await this.repo.setTemplates(created.id, templateIds);
@@ -87,6 +93,13 @@ export class CampaignService {
       throw httpError(409, "Stop the campaign before switching it to a different import");
     }
     await this.checkRefs(userId, input);
+    if (input.aiProvider !== undefined || input.aiModel !== undefined) {
+      // Check the pair as it will be saved: a model alone keeps the stored provider, and
+      // switching provider without naming a model drops the old provider's model.
+      const provider = input.aiProvider !== undefined ? input.aiProvider : existing.aiProvider;
+      if (input.aiModel === undefined && provider !== existing.aiProvider) input = { ...input, aiModel: null };
+      await this.checkAi(userId, provider, input.aiModel !== undefined ? input.aiModel : existing.aiModel);
+    }
     const { templateIds, ...patch } = input;
     await this.repo.update(userId, id, patch as Partial<Campaign>);
     if (templateIds) await this.repo.setTemplates(id, templateIds);
@@ -144,6 +157,21 @@ export class CampaignService {
     }
     if (input.templateIds?.length && !(await this.lookups.templatesOwned(userId, input.templateIds))) {
       throw httpError(400, "One or more templates not found");
+    }
+  }
+
+  /** The campaign's AI provider must be one the user has a key for, and its model one
+   *  that provider offers (curated, or the provider's live-checked saved model). */
+  private async checkAi(userId: number, provider: string | null, model: string | null): Promise<void> {
+    if (provider == null) {
+      if (model != null) throw httpError(400, "Pick an AI provider for the chosen model");
+      return;
+    }
+    const label = isAiProvider(provider) ? PROVIDERS[provider].label : provider;
+    const models = await this.lookups.aiProviderModels(userId, provider);
+    if (!models) throw httpError(400, `${label} is not configured — add its API key in Settings first`);
+    if (model != null && !models.includes(model)) {
+      throw httpError(400, `"${model}" is not an available ${label} model`);
     }
   }
 

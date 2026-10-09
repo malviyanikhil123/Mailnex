@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { settingsApi } from "../services/settings.api";
 import { Spinner, ErrorState } from "../components/ui/primitives";
 import { GmailSection } from "../components/settings/GmailSection";
-import { GeminiSection } from "../components/settings/GeminiSection";
+import { AiProvidersSection } from "../components/settings/AiProvidersSection";
 import { SendersSection } from "../components/settings/SendersSection";
 import { CandidateSection } from "../components/settings/CandidateSection";
 import { ProfileFieldsSection } from "../components/settings/ProfileFieldsSection";
@@ -20,7 +20,7 @@ export default function Settings() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Settings</h1>
       <GmailSection configured={data.gmailConfigured} email={data.gmailEmail} onSaved={invalidate} />
-      <GeminiSection configured={data.geminiConfigured} onSaved={invalidate} />
+      <AiProvidersSection onSaved={invalidate} />
       <SendersSection primaryEmail={data.gmailEmail} primaryLimit={data.senderDailyLimit} onSaved={invalidate} />
       <CandidateSection profile={data.candidate} onSaved={invalidate} />
       <ProfileFieldsSection fields={data.profileFields} onSaved={invalidate} />

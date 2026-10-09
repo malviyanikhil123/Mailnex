@@ -585,10 +585,10 @@ export async function runClassifyForUser(
   mode: "new" | "all",
   onProgress?: (p: { phase: string; processed: number; total: number }) => void,
 ) {
-  const [{ classifyInboxJob }, { classifyMessages }, { settingsService }] = await Promise.all([
+  const [{ classifyInboxJob }, { classifyMessages }, { aiProvidersService }] = await Promise.all([
     import("../../jobs/classify-inbox.js"),
-    import("../../integrations/gemini/classifier.js"),
-    import("../settings/settings.service.js"),
+    import("../../integrations/ai/classifier.js"),
+    import("../ai-providers/ai-providers.service.js"),
   ]);
 
   return classifyInboxJob(
@@ -608,7 +608,8 @@ export async function runClassifyForUser(
         listReclassifiable: (limit) => inboxRepo.listReclassifiable(userId, limit),
         applyAssignment: (id, a) => inboxRepo.applyAssignment(userId, id, a),
       },
-      getGeminiKey: () => settingsService.getGeminiKey(userId),
+      // Inbox sorting always runs on the user's default provider and its saved model.
+      getAiConfig: () => aiProvidersService.resolve(userId),
       classifyMessages,
       progress: onProgress,
     },

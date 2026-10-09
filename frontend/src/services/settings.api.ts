@@ -5,8 +5,6 @@ export const settingsApi = {
   get: () => apiClient.get<PublicSettings>("/settings").then((r) => r.data),
   updateGmail: (email: string, appPassword: string) =>
     apiClient.patch("/settings/gmail", { email, appPassword }).then((r) => r.data),
-  updateGemini: (apiKey: string) =>
-    apiClient.patch("/settings/gemini", { apiKey }).then((r) => r.data),
   updateCandidate: (profile: CandidateProfile) =>
     apiClient.patch<CandidateProfile>("/settings/candidate", profile).then((r) => r.data),
   updateSending: (senderDailyLimit: number) =>

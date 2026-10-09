@@ -1,7 +1,8 @@
 /**
- * Gemini inbox classifier — the AI fallback for mail no rule matched.
+ * AI inbox classifier — the fallback for mail no rule matched. Runs on the user's
+ * default provider and model.
  *
- * Mirrors personalize() in client.ts: an injected modelFactory for tests, the same
+ * Mirrors personalize() in personalize.ts: an injected modelFactory for tests, the same
  * fence-stripping and Zod validation, and it NEVER throws. Any failure degrades to
  * "no decision", which leaves the message Uncategorized and retryable on the next
  * pass rather than losing it.
@@ -19,7 +20,14 @@ import { logger } from "../../utils/logger.js";
 import { normalizeForMatch } from "../../utils/normalize-text.js";
 import type { JobStatus } from "../../modules/inbox/rules-engine.js";
 import { buildClassificationPrompt } from "./classify-prompt.js";
-import { defaultModelFactory, type ModelFactory } from "./model-factory.js";
+import { describeAiError } from "./errors.js";
+import {
+  AI_TIMEOUTS,
+  defaultModelFactory,
+  generateAiText,
+  type AiModelConfig,
+  type ModelFactory,
+} from "./model-factory.js";
 
 export const JOB_STATUSES = [
   "APPLIED", "ACKNOWLEDGED", "RECRUITER_REPLY", "INTERVIEW_INVITE",
@@ -43,7 +51,8 @@ export interface ClassifyItem {
 export interface ClassifyInput {
   categories: ClassifyCategory[];
   items: ClassifyItem[];
-  apiKey?: string;
+  /** The user's default provider, key and model; absent = no AI pass. */
+  ai?: AiModelConfig;
 }
 
 export interface ClassifyDecision {
@@ -101,15 +110,15 @@ export async function classifyMessages(
   input: ClassifyInput,
   modelFactory: ModelFactory = defaultModelFactory,
 ): Promise<ClassifyResult> {
-  const { categories, items, apiKey } = input;
+  const { categories, items, ai } = input;
 
   if (items.length === 0) return { decisions: [], aiUsed: false, aiCalls: 0 };
 
   // No key → never construct the model at all, exactly like personalize().
-  if (!apiKey || categories.length === 0) {
+  if (!ai?.apiKey || categories.length === 0) {
     return {
       decisions: items.map((it) =>
-        noDecision(it.ref, !apiKey ? "No Gemini API key configured" : "No categories defined"),
+        noDecision(it.ref, !ai?.apiKey ? "No AI provider configured" : "No categories defined"),
       ),
       aiUsed: false,
       aiCalls: 0,
@@ -133,7 +142,7 @@ export async function classifyMessages(
     if (b > 0) await sleep(INBOX.AI_BATCH_DELAY_MS);
 
     const batchDecisions = await classifyBatch(
-      batch, categories, byName, jobStatuses, apiKey, modelFactory,
+      batch, categories, byName, jobStatuses, ai, modelFactory,
     );
     aiCalls++;
     if (batchDecisions.some((d) => d.categoryId !== null || d.confidence > 0)) aiUsed = true;
@@ -159,13 +168,13 @@ async function classifyBatch(
   categories: ClassifyCategory[],
   byName: Map<string, ClassifyCategory>,
   jobStatuses: string[],
-  apiKey: string,
+  ai: AiModelConfig,
   modelFactory: ModelFactory,
 ): Promise<ClassifyDecision[]> {
   const fallback = (reason: string) => batch.map((it) => noDecision(it.ref, reason));
+  const where = { provider: ai.provider, model: ai.model };
 
   try {
-    const model = modelFactory(apiKey);
     const prompt = buildClassificationPrompt({
       categories: categories.map((c) => ({
         name: c.name, description: c.description, trackSubStatus: c.trackSubStatus,
@@ -179,11 +188,14 @@ async function classifyBatch(
       jobStatuses,
     });
 
-    const result = await model.generateContent(prompt);
-    const rawText = result.response.text();
+    const rawText = await generateAiText(
+      ai,
+      { prompt, timeoutMs: AI_TIMEOUTS.CLASSIFY_MS },
+      modelFactory,
+    );
 
     if (!rawText || rawText.trim() === "") {
-      logger.warn({ reason: "empty_response" }, "Gemini classifier returned an empty response");
+      logger.warn({ reason: "empty_response", ...where }, "AI classifier returned an empty response");
       return fallback("AI returned an empty response");
     }
 
@@ -197,8 +209,8 @@ async function classifyBatch(
       parsed = JSON.parse(cleaned);
     } catch {
       logger.warn(
-        { reason: "json_parse_error", raw: cleaned.slice(0, 200) },
-        "Gemini classifier returned non-JSON text",
+        { reason: "json_parse_error", ...where, raw: cleaned.slice(0, 200) },
+        "AI classifier returned non-JSON text",
       );
       return fallback("AI returned unreadable output");
     }
@@ -206,8 +218,8 @@ async function classifyBatch(
     const validated = responseSchema.safeParse(parsed);
     if (!validated.success) {
       logger.warn(
-        { reason: "zod_validation_failed", errors: validated.error.issues.slice(0, 5) },
-        "Gemini classifier output failed schema validation",
+        { reason: "zod_validation_failed", ...where, errors: validated.error.issues.slice(0, 5) },
+        "AI classifier output failed schema validation",
       );
       return fallback("AI output failed validation");
     }
@@ -241,7 +253,7 @@ async function classifyBatch(
     );
   } catch (err) {
     // One bad batch must not kill the run.
-    logger.warn({ reason: "model_error", err }, "Gemini classifier batch failed");
+    logger.warn({ reason: "model_error", ...where, err: describeAiError(err) }, "AI classifier batch failed");
     return fallback("AI request failed");
   }
 }

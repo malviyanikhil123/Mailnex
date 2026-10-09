@@ -6,7 +6,7 @@
  *      before the user has said what their categories are, and this is the primary
  *      gate for that requirement (the API has a second, independent one).
  *   2. Rules first. Deterministic, free, instant, and explainable.
- *   3. Only what no rule matched goes to Gemini, in batches.
+ *   3. Only what no rule matched goes to the user's default AI provider, in batches.
  *
  * Manual assignments are never candidates, and the repo's UPDATE additionally guards
  * on manual_override = false — two layers, because silently overwriting a correction
@@ -17,7 +17,8 @@ import { INBOX } from "../config/constants.js";
 import { logger } from "../utils/logger.js";
 import { matchRules, type JobStatus, type RuleLike } from "../modules/inbox/rules-engine.js";
 import type { Assignment } from "../modules/inbox/inbox.repo.js";
-import type { ClassifyFn } from "../integrations/gemini/classifier.js";
+import type { ClassifyFn } from "../integrations/ai/classifier.js";
+import type { AiModelConfig } from "../integrations/ai/model-factory.js";
 
 export interface ClassifyCategoryRow {
   id: number;
@@ -46,7 +47,8 @@ export interface ClassifyInboxDeps {
     /** Returns false when the row was a manual pick and was therefore left alone. */
     applyAssignment(id: number, a: Assignment): Promise<boolean>;
   };
-  getGeminiKey: () => Promise<string>;
+  /** The user's default AI provider, key and model; null when no key is saved. */
+  getAiConfig: () => Promise<AiModelConfig | null>;
   classifyMessages: ClassifyFn;
   progress?: (p: { phase: string; processed: number; total: number }) => void;
   now?: () => Date;
@@ -149,7 +151,7 @@ export async function classifyInboxJob(
 
   if (unmatched.length > 0) {
     deps.progress?.({ phase: "asking AI", processed, total: candidates.length });
-    const apiKey = await deps.getGeminiKey();
+    const ai = await deps.getAiConfig();
 
     const result = await deps.classifyMessages({
       // Re-read per run so a rename mid-flight cannot write a stale name/id pair.
@@ -162,7 +164,7 @@ export async function classifyInboxJob(
         subject: m.subject,
         text: m.bodyText,
       })),
-      apiKey: apiKey || undefined,
+      ai: ai ?? undefined,
     });
     aiCalls = result.aiCalls;
 

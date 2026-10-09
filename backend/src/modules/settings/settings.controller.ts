@@ -8,7 +8,6 @@ import { settingsService } from "./settings.service.js";
 import { env } from "../../config/env.js";
 import {
   updateGmailSchema,
-  updateGeminiSchema,
   candidateProfileSchema,
   updateSendingSchema,
   profileFieldsSchema,
@@ -30,14 +29,6 @@ export async function settingsController(app: FastifyInstance) {
     const userId = getUserId(req);
     const input = updateGmailSchema.parse(req.body);
     await settingsService.updateGmail(userId, input);
-    return reply.code(200).send({ updated: true });
-  });
-
-  /** PATCH /settings/gemini — store encrypted Gemini API key. */
-  app.patch("/gemini", { preHandler: authGuard }, async (req, reply) => {
-    const userId = getUserId(req);
-    const input = updateGeminiSchema.parse(req.body);
-    await settingsService.updateGemini(userId, input);
     return reply.code(200).send({ updated: true });
   });
 

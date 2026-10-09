@@ -51,11 +51,13 @@ function makeFakeRepo(): ISettingsRepo & { app: Partial<AppSettings>; fields: Pr
 describe("SettingsService", () => {
   let repo: ReturnType<typeof makeFakeRepo>;
   let service: SettingsService;
+  let aiKeys: { hasAny: (userId: number) => Promise<boolean> };
   const userId = 1;
 
   beforeEach(() => {
     repo = makeFakeRepo();
-    service = new SettingsService(repo);
+    aiKeys = { hasAny: async () => false };
+    service = new SettingsService(repo, aiKeys);
   });
 
   it("encrypts the Gmail app password at rest and round-trips via getGmailCreds", async () => {
@@ -66,29 +68,27 @@ describe("SettingsService", () => {
     expect(creds).toEqual({ email: "me@gmail.com", password: "abcd efgh ijkl mnop" });
   });
 
-  it("encrypts the Gemini key and round-trips via getGeminiKey", async () => {
-    await service.updateGemini(userId, { apiKey: "AIzaTopSecretKey" });
-    expect(repo.app.geminiApiKeyEnc).toBeDefined();
-    expect(repo.app.geminiApiKeyEnc).not.toContain("AIzaTopSecretKey");
-    expect(await service.getGeminiKey(userId)).toBe("AIzaTopSecretKey");
-  });
-
   it("getGmailCreds returns null when not configured", async () => {
     expect(await service.getGmailCreds(userId)).toBeNull();
   });
 
   it("getPublic exposes booleans and candidate but NEVER decrypted secrets", async () => {
     await service.updateGmail(userId, { email: "me@gmail.com", appPassword: "secretpass" });
-    await service.updateGemini(userId, { apiKey: "secretkey" });
     const pub = await service.getPublic(userId);
     expect(pub.gmailConfigured).toBe(true);
-    expect(pub.geminiConfigured).toBe(true);
     expect(pub.gmailEmail).toBe("me@gmail.com");
     const serialized = JSON.stringify(pub);
     expect(serialized).not.toContain("secretpass");
-    expect(serialized).not.toContain("secretkey");
     expect(pub.senderDailyLimit).toBe(100);
     expect(pub.profileFields).toEqual([]);
+  });
+
+  it("aiConfigured reflects whether any AI provider key is saved", async () => {
+    expect((await service.getPublic(userId)).aiConfigured).toBe(false);
+    aiKeys.hasAny = async (id) => id === userId;
+    const pub = await service.getPublic(userId);
+    expect(pub.aiConfigured).toBe(true);
+    expect(pub).not.toHaveProperty("geminiConfigured");
   });
 
   it("updateCandidate merges with the existing profile", async () => {

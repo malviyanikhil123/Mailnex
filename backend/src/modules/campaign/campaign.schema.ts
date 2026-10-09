@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { campaignMode } from "../../db/schema/enums.js";
+import { AI_PROVIDERS, MODEL_ID_PATTERN } from "../../integrations/ai/providers.js";
 
 const campaignFields = z.object({
   name: z.string().trim().min(1).max(120),
@@ -17,6 +18,10 @@ const campaignFields = z.object({
   language: z.string().trim().min(1).max(40),
   aiEnabled: z.boolean(),
   aiInstructions: z.string().trim().max(2000).nullable(),
+  /** AI provider for personalization; null = the user's default provider. */
+  aiProvider: z.enum(AI_PROVIDERS).nullable(),
+  /** Model of that provider; null = the provider's saved model. Needs aiProvider. */
+  aiModel: z.string().trim().regex(MODEL_ID_PATTERN, "Invalid model id").nullable(),
 });
 
 const windowIsValid = (v: { startHour?: number; endHour?: number }) =>
@@ -36,6 +41,8 @@ export const createCampaignSchema = campaignFields
     language: campaignFields.shape.language.default("English"),
     aiEnabled: campaignFields.shape.aiEnabled.default(true),
     aiInstructions: campaignFields.shape.aiInstructions.default(null),
+    aiProvider: campaignFields.shape.aiProvider.default(null),
+    aiModel: campaignFields.shape.aiModel.default(null),
   })
   .refine(windowIsValid, windowError);
 export type CreateCampaignInput = z.infer<typeof createCampaignSchema>;

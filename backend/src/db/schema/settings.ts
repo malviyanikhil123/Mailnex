@@ -7,6 +7,8 @@ export const appSettings = pgTable("app_settings", {
   emailProvider: text("email_provider").notNull().default("gmail"),
   gmailEmail: text("gmail_email"),
   gmailAppPasswordEnc: text("gmail_app_password_enc"),
+  // Legacy: superseded by ai_provider_keys (backfilled as the "google" key). No longer
+  // read or written; kept for rollback safety until a later migration drops it.
   geminiApiKeyEnc: text("gemini_api_key_enc"),
   candidateProfile: text("candidate_profile").notNull().default("{}"),
   resumePath: text("resume_path"),

@@ -6,12 +6,6 @@ export const updateGmailSchema = z.object({
 });
 export type UpdateGmailInput = z.infer<typeof updateGmailSchema>;
 
-/** Gemini API key update — write-only. */
-export const updateGeminiSchema = z.object({
-  apiKey: z.string().min(1),
-});
-export type UpdateGeminiInput = z.infer<typeof updateGeminiSchema>;
-
 /** Candidate profile — editable from the Settings UI. All fields optional so a
  *  partial form submission merges with the existing stored profile. */
 export const candidateProfileSchema = z.object({

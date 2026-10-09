@@ -4,8 +4,9 @@ import { contactsApi } from "../../services/contacts.api";
 import { templatesApi } from "../../services/templates.api";
 import { sendersApi } from "../../services/senders.api";
 import { settingsApi } from "../../services/settings.api";
+import { aiApi } from "../../services/ai.api";
 import { Button, Input, Textarea } from "../ui/primitives";
-import type { Campaign, CampaignInput, CampaignMode } from "../../types/api";
+import type { AiProviderId, Campaign, CampaignInput, CampaignMode } from "../../types/api";
 
 const MODES: CampaignMode[] = ["DRAFT", "TEST", "LIVE"];
 const LANGUAGES = ["English", "Hindi", "Spanish", "French", "German", "Portuguese", "Arabic", "Japanese"];
@@ -26,6 +27,8 @@ const EMPTY: CampaignInput = {
   language: "English",
   aiEnabled: true,
   aiInstructions: null,
+  aiProvider: null,
+  aiModel: null,
 };
 
 /** Create/edit form: the three parameters that define a campaign are the import it
@@ -49,6 +52,14 @@ export function CampaignForm({
   const templates = useQuery({ queryKey: ["templates"], queryFn: templatesApi.list });
   const senders = useQuery({ queryKey: ["senders"], queryFn: sendersApi.list });
   const settings = useQuery({ queryKey: ["settings"], queryFn: settingsApi.get });
+  const aiProviders = useQuery({ queryKey: ["ai-providers"], queryFn: aiApi.list });
+  const connectedAi = aiProviders.data?.filter((p) => p.configured) ?? [];
+  const defaultAi = connectedAi.find((p) => p.isDefault);
+  const chosenAi = connectedAi.find((p) => p.provider === v.aiProvider);
+  // Curated models plus the provider's saved one when it is a custom id.
+  const chosenModels = chosenAi
+    ? chosenAi.models.includes(chosenAi.defaultModel) ? chosenAi.models : [...chosenAi.models, chosenAi.defaultModel]
+    : [];
 
   const toggleTemplate = (id: number) =>
     set("templateIds", v.templateIds.includes(id) ? v.templateIds.filter((t) => t !== id) : [...v.templateIds, id]);
@@ -152,12 +163,47 @@ export function CampaignForm({
         <Labeled label="AI enhancement">
           <label className="flex h-[38px] items-center gap-2 text-sm">
             <input type="checkbox" checked={v.aiEnabled} onChange={(e) => set("aiEnabled", e.target.checked)} />
-            Personalize each email with Gemini
+            Personalize each email with AI
           </label>
         </Labeled>
       </div>
       {!v.aiEnabled && v.language !== "English" && (
         <Hint>Without AI the template is sent as written — write it in {v.language || "the target language"}.</Hint>
+      )}
+
+      {v.aiEnabled && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Labeled label="AI provider">
+            <select
+              className={selectClass}
+              value={v.aiProvider ?? ""}
+              onChange={(e) => setV((p) => ({ ...p, aiProvider: (e.target.value || null) as AiProviderId | null, aiModel: null }))}
+            >
+              <option value="">Default{defaultAi ? ` (${defaultAi.label})` : ""}</option>
+              {connectedAi.map((p) => (
+                <option key={p.provider} value={p.provider}>{p.label}</option>
+              ))}
+              {v.aiProvider && !chosenAi && <option value={v.aiProvider}>{v.aiProvider} (not connected)</option>}
+            </select>
+            {aiProviders.isSuccess && connectedAi.length === 0 && (
+              <Hint>No AI provider connected — emails go out as written until you add an API key in Settings.</Hint>
+            )}
+          </Labeled>
+          <Labeled label="Model">
+            <select
+              className={selectClass}
+              value={v.aiModel ?? ""}
+              disabled={!chosenAi}
+              onChange={(e) => set("aiModel", e.target.value || null)}
+            >
+              <option value="">
+                {chosenAi ? `Provider default (${chosenAi.defaultModel})` : `Default${defaultAi ? ` (${defaultAi.defaultModel})` : ""}`}
+              </option>
+              {chosenModels.map((m) => <option key={m} value={m}>{m}</option>)}
+              {v.aiModel && !chosenModels.includes(v.aiModel) && <option value={v.aiModel}>{v.aiModel}</option>}
+            </select>
+          </Labeled>
+        </div>
       )}
 
       {v.aiEnabled && (
@@ -180,8 +226,8 @@ export function CampaignForm({
 }
 
 function pickInput(c: Campaign): CampaignInput {
-  const { name, importId, senderAccountId, templateIds, mode, dailyLimit, startHour, endHour, testEmail, language, aiEnabled, aiInstructions } = c;
-  return { name, importId, senderAccountId, templateIds, mode, dailyLimit, startHour, endHour, testEmail, language, aiEnabled, aiInstructions };
+  const { name, importId, senderAccountId, templateIds, mode, dailyLimit, startHour, endHour, testEmail, language, aiEnabled, aiInstructions, aiProvider, aiModel } = c;
+  return { name, importId, senderAccountId, templateIds, mode, dailyLimit, startHour, endHour, testEmail, language, aiEnabled, aiInstructions, aiProvider, aiModel };
 }
 
 function Labeled({ label, children }: { label: string; children: React.ReactNode }) {

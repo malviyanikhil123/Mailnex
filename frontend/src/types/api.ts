@@ -94,6 +94,10 @@ export interface CampaignInput {
   language: string;
   aiEnabled: boolean;
   aiInstructions: string | null;
+  /** null = the user's default AI provider. */
+  aiProvider: AiProviderId | null;
+  /** null = the provider's saved model; only set together with aiProvider. */
+  aiModel: string | null;
 }
 
 export interface Campaign extends CampaignInput {
@@ -114,6 +118,24 @@ export interface SenderAccount {
   dailyLimit: number;
   active: boolean;
   createdAt: string;
+}
+
+export type AiProviderId = "openai" | "anthropic" | "google" | "groq";
+
+/** One AI provider as GET /ai-providers lists it. The API key itself is never returned. */
+export interface AiProviderStatus {
+  provider: AiProviderId;
+  label: string;
+  configured: boolean;
+  /** Last 4 characters of the saved key. */
+  keyLast4: string | null;
+  /** The saved model, or the recommended one while not configured. */
+  defaultModel: string;
+  isDefault: boolean;
+  /** Curated models; the first is the recommended one. */
+  models: string[];
+  keyUrl: string;
+  updatedAt: string | null;
 }
 
 export interface ProfileField {
@@ -180,7 +202,8 @@ export interface PublicSettings {
   emailProvider: string;
   gmailEmail: string | null;
   gmailConfigured: boolean;
-  geminiConfigured: boolean;
+  /** True when at least one AI provider key is saved. */
+  aiConfigured: boolean;
   candidate: CandidateProfile;
   resumeFileName: string | null;
   /** Daily cap of the primary Gmail, shared by every campaign sending from it. */

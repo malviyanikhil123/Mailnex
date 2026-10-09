@@ -17,6 +17,7 @@ export async function cleanDatabase() {
       campaigns, 
       sender_accounts, 
       profile_fields, 
+      ai_provider_keys, 
       daily_quota, 
       contacts_imports, 
       contacts, 
