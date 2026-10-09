@@ -39,6 +39,13 @@ export const IMPORT_LIMITS = {
 
 const HEADER_SCAN_ROWS = 10;
 const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+/**
+ * Only the start of a cell is searched for an address: EMAIL_REGEX backtracks
+ * quadratically, so one huge cell (the upload may be 20 MB) would block the event loop.
+ */
+const MAX_EMAIL_SCAN_LENGTH = 1000;
+/** A surrogate half without its partner, e.g. left behind by cutting a value mid-emoji. */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
 type Field = "email" | "firstName" | "lastName" | "fullName" | "companyName" | "phone" | "website" | "location";
 
@@ -156,8 +163,8 @@ function extractCellString(val: unknown): string {
 }
 
 function extractEmail(val: string): string {
-  if (!val) return "";
-  const cleaned = val.replace(/^mailto:/i, "").trim();
+  if (!val || !val.includes("@")) return "";
+  const cleaned = val.slice(0, MAX_EMAIL_SCAN_LENGTH).replace(/^mailto:/i, "").trim();
   const match = cleaned.match(EMAIL_REGEX);
   return match ? match[0].toLowerCase() : "";
 }
@@ -169,7 +176,8 @@ function extractEmail(val: string): string {
  * templates must render them verbatim. Formula injection only matters when values are
  * written back into a spreadsheet, so CSV exports must neutralize such cells instead
  * (the contacts page export prefixes them with an apostrophe, which is dropped again
- * here so an exported file imports back unchanged).
+ * here so an exported file imports back unchanged). Lone surrogates (e.g. an emoji cut
+ * in half by the length cap) are dropped: Postgres rejects them in jsonb (custom_fields).
  */
 function cleanValue(raw: string | undefined): string {
   if (!raw) return "";
@@ -178,7 +186,8 @@ function cleanValue(raw: string | undefined): string {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^'(?=[=+\-@])/, "")
-    .slice(0, IMPORT_LIMITS.MAX_VALUE_LENGTH);
+    .slice(0, IMPORT_LIMITS.MAX_VALUE_LENGTH)
+    .replace(LONE_SURROGATE, "");
 }
 
 /** Header comparison key: case, spaces, underscores and punctuation are ignored. */

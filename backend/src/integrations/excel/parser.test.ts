@@ -327,6 +327,23 @@ describe("parseContactsXlsx", () => {
     expect(rows[0].phone).toBe("+1 555 0100");
     expect(rows[0].customFields.note).toBe("'it's fine");
   });
+
+  it("does not split an emoji when cutting a long value (Postgres rejects lone surrogates in jsonb)", async () => {
+    const cut = "a".repeat(IMPORT_LIMITS.MAX_VALUE_LENGTH - 1) + "😀";
+    const file = await csv(`email,note\na@x.io,${cut}\n`);
+    const { rows } = await parse(file);
+    expect(rows[0].customFields.note).toBe("a".repeat(IMPORT_LIMITS.MAX_VALUE_LENGTH - 1));
+    expect(JSON.stringify(rows[0].customFields)).not.toMatch(/\\ud[89ab]/i);
+  });
+
+  it("reads huge cells quickly (the email search only looks at the start of a cell)", async () => {
+    const huge = "a".repeat(200_000);
+    const file = await csv(`email,note\na@x.io,${huge}\n${huge},${huge}@x.io\n`);
+    const started = Date.now();
+    const { rows } = await parse(file);
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(rows.map((r) => r.email)).toEqual(["a@x.io", ""]);
+  });
 });
 
 describe("customFieldKey", () => {
