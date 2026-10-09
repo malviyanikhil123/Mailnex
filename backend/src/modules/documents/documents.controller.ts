@@ -40,6 +40,9 @@ export async function documentsController(app: FastifyInstance) {
       if ((err as { code?: string }).code === "FST_REQ_FILE_TOO_LARGE") throw fileTooLargeError();
       throw err;
     }
+    // toBuffer() can miss the limit when the cut falls exactly on a chunk boundary and
+    // return the first DOCUMENT_MAX_BYTES bytes; busboy still flags the stream as truncated.
+    if (data.file.truncated) throw fileTooLargeError();
     const doc = await documentsService.upload(userId, {
       name: textField(data.fields, "name"),
       originalName: data.filename,

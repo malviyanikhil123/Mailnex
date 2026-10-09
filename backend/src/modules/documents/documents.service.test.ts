@@ -125,6 +125,14 @@ describe("DocumentsService", () => {
     expect(fakes.files.size).toBe(0);
   });
 
+  it("removes the stored file when saving the row fails", async () => {
+    fakes.repo.addWithinLimit = async () => {
+      throw new Error("db down");
+    };
+    await expect(service.upload(userId, { originalName: "a.pdf", content: PDF })).rejects.toThrow("db down");
+    expect(fakes.files.size).toBe(0);
+  });
+
   it("lists only the user's documents, without server paths", async () => {
     await service.upload(userId, { originalName: "a.pdf", content: PDF });
     await service.upload(2, { originalName: "b.pdf", content: PDF });

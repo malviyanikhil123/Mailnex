@@ -109,7 +109,13 @@ export class DocumentsService {
     }
 
     const filePath = await this.storage.save(`${randomUUID()}.${ext}`, input.content);
-    const row = await this.repo.addWithinLimit(userId, { name, fileName, filePath }, max);
+    let row: DocumentRow | null;
+    try {
+      row = await this.repo.addWithinLimit(userId, { name, fileName, filePath }, max);
+    } catch (err) {
+      await this.storage.remove(filePath); // don't leave an orphan file when the insert fails
+      throw err;
+    }
     if (!row) {
       await this.storage.remove(filePath);
       throw this.fullError();

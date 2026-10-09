@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
+import http from "http";
 import { documentsService } from "./documents.service.js";
 import { LIMITS } from "../../config/constants.js";
 
@@ -83,6 +84,49 @@ describe("documents routes (no DB required)", () => {
     const res = await app.inject({ method: "POST", url: "/settings/documents", headers: { ...auth, ...body.headers }, payload: body.payload });
     expect(res.statusCode).toBe(413);
     expect(res.json().message).toBe("This file is too large. Documents can be up to 5 MB.");
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("POST rejects with 413 when the size limit falls exactly between two network reads", async () => {
+    // Over a real socket the server reads exactly DOCUMENT_MAX_BYTES of file data, then the
+    // rest arrives. busboy cuts the stream without a partial chunk, so toBuffer() returns
+    // the first 5 MB without throwing; only file.truncated tells the upload was cut.
+    const upload = vi
+      .spyOn(documentsService, "upload")
+      .mockResolvedValue({ id: 1, name: "big", fileName: "big.txt", createdAt: new Date() });
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const { port } = app.server.address() as { port: number };
+    const boundary = "----mailnexTestBoundary";
+    const head = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="big.txt"\r\nContent-Type: text/plain\r\n\r\n`,
+    );
+    const first = Buffer.concat([head, Buffer.alloc(LIMITS.DOCUMENT_MAX_BYTES, 0x41)]);
+    const rest = Buffer.concat([Buffer.alloc(1024, 0x41), Buffer.from(`\r\n--${boundary}--\r\n`)]);
+    const res = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const req = http.request(
+        {
+          host: "127.0.0.1",
+          port,
+          method: "POST",
+          path: "/settings/documents",
+          headers: {
+            ...auth,
+            "content-type": `multipart/form-data; boundary=${boundary}`,
+            "content-length": first.length + rest.length,
+          },
+        },
+        (r) => {
+          let body = "";
+          r.on("data", (d) => (body += d));
+          r.on("end", () => resolve({ status: r.statusCode ?? 0, body }));
+        },
+      );
+      req.on("error", reject);
+      req.write(first);
+      setTimeout(() => req.end(rest), 300);
+    });
+    expect(res.status).toBe(413);
+    expect(JSON.parse(res.body).message).toBe("This file is too large. Documents can be up to 5 MB.");
     expect(upload).not.toHaveBeenCalled();
   });
 
