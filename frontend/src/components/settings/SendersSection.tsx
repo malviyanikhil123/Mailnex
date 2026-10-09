@@ -101,10 +101,19 @@ export function SendersSection({
   };
   const [changingPasswordId, setChangingPasswordId] = useState<number | null>(null);
   const update = useMutation({
-    mutationFn: ({ id, patch }: { id: number; patch: Partial<SenderAccount> & { appPassword?: string } }) =>
-      sendersApi.update(id, patch),
+    mutationFn: ({ id, patch }: { id: number; patch: Partial<SenderAccount> }) => sendersApi.update(id, patch),
     onSuccess: () => { toast.success("Sender updated"); refresh(); },
     onError: (err) => toast.error(errorMessage(err, "Update failed")),
+  });
+  // Separate from `update` so activating another sender doesn't look like a Gmail check.
+  const changePassword = useMutation({
+    mutationFn: ({ id, appPassword }: { id: number; appPassword: string }) => sendersApi.update(id, { appPassword }),
+    onSuccess: (_data, { id }) => {
+      toast.success("App password updated");
+      setChangingPasswordId((current) => (current === id ? null : current));
+      refresh();
+    },
+    onError: (err) => toast.error(errorMessage(err, "Could not change the app password")),
   });
   const remove = useMutation({
     mutationFn: (id: number) => sendersApi.remove(id),
@@ -169,10 +178,8 @@ export function SendersSection({
               {changingPasswordId === s.id && (
                 <ChangeAppPasswordForm
                   email={s.email}
-                  saving={update.isPending}
-                  onSave={(appPassword) =>
-                    update.mutate({ id: s.id, patch: { appPassword } }, { onSuccess: () => setChangingPasswordId(null) })
-                  }
+                  saving={changePassword.isPending && changePassword.variables?.id === s.id}
+                  onSave={(appPassword) => changePassword.mutate({ id: s.id, appPassword })}
                   onCancel={() => setChangingPasswordId(null)}
                 />
               )}

@@ -5,6 +5,8 @@ import { ProtectedRoute } from "./routes/ProtectedRoute";
 import { AppLayout } from "./layouts/AppLayout";
 import { Toaster } from "./components/ui/Toaster";
 import { useTheme } from "./store/theme";
+import { startAuthSync } from "./store/auth-sync";
+import { useClearQueriesOnUserChange } from "./hooks/useClearQueriesOnUserChange";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
@@ -30,6 +32,10 @@ const queryClient = new QueryClient({
 export default function App() {
   const apply = useTheme((s) => s.apply);
   useEffect(() => apply(), [apply]);
+
+  // Share the session with other open tabs (and get theirs if this tab has none).
+  useEffect(() => startAuthSync(), []);
+  useClearQueriesOnUserChange(queryClient);
 
   return (
     <QueryClientProvider client={queryClient}>

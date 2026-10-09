@@ -20,6 +20,14 @@ interface AuthState {
 
 type PersistedAuth = Pick<AuthState, "accessToken" | "refreshToken" | "user" | "rememberMe">;
 
+/** A signed-in session as handed between tabs (see auth-sync.ts). */
+export interface AuthSession {
+  accessToken: string;
+  refreshToken: string;
+  user: User;
+  rememberMe: boolean;
+}
+
 // Storage can throw (private mode, blocked site data); treat that as "nothing stored".
 function read(store: () => Storage, key: string): StorageValue<PersistedAuth> | null {
   try {

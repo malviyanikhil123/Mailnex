@@ -7,7 +7,9 @@ export const authApi = {
   login: (email: string, password: string, rememberMe = false) =>
     apiClient.post<LoginResponse>("/auth/login", { email, password, rememberMe }).then((r) => r.data),
   me: () => apiClient.get<User>("/auth/me").then((r) => r.data),
-  /** Revokes the refresh token server-side. Call before clearing the store; it is short so
-   *  an unreachable server can't hold up signing out. */
-  logout: () => apiClient.post("/auth/logout", null, { timeout: 5000 }).then((r) => r.data),
+  /** Revokes this browser's session (the one `refreshToken` belongs to) server-side; other
+   *  devices stay signed in. Call before clearing the store. The short timeout keeps an
+   *  unreachable server from holding up signing out. */
+  logout: (refreshToken: string | null) =>
+    apiClient.post("/auth/logout", refreshToken ? { refreshToken } : {}, { timeout: 5000 }).then((r) => r.data),
 };

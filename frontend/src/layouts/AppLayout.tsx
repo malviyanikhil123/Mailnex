@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "../store/theme";
 import { useAuth } from "../store/auth";
+import { signOutAllTabs } from "../store/auth-sync";
 import { authApi } from "../services/auth.api";
 import { PwaInstallBanner } from "../components/PwaInstallBanner";
 
@@ -29,7 +30,7 @@ const nav = [
 
 export function AppLayout() {
   const { dark, toggle } = useTheme();
-  const { user, clear } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -38,9 +39,10 @@ export function AppLayout() {
   const mainRef = useRef<HTMLElement>(null);
 
   const logout = async () => {
-    // Revoke the refresh token server-side too; sign out locally even if that fails.
-    await authApi.logout().catch(() => {});
-    clear();
+    // Revoke this browser's session server-side too; sign out locally (and in the other
+    // tabs) even if that fails. App clears the query cache when the user goes away.
+    await authApi.logout(useAuth.getState().refreshToken).catch(() => {});
+    signOutAllTabs();
     navigate("/login");
   };
 

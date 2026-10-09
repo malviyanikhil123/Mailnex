@@ -49,6 +49,26 @@ describe("SendersSection", () => {
     expect(prompt).not.toHaveBeenCalled();
   });
 
+  it("shows 'Verifying with Gmail…' only for the password being changed, not for other updates", async () => {
+    sendersApi.list.mockResolvedValue([
+      { id: 7, label: "Sales", email: "sales@acme.io", dailyLimit: 40, active: true, createdAt: "2026-01-01T00:00:00Z" },
+      { id: 8, label: "Ops", email: "ops@acme.io", dailyLimit: 40, active: true, createdAt: "2026-01-01T00:00:00Z" },
+    ]);
+    sendersApi.update.mockReturnValue(new Promise(() => {})); // stays pending
+    wrap(<SendersSection primaryEmail={null} primaryLimit={50} onSaved={() => {}} />);
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "Change password" }))[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Deactivate" })[1]);
+
+    await waitFor(() => expect(sendersApi.update).toHaveBeenCalledWith(8, { active: false }));
+    expect(screen.getByRole("button", { name: "Save password" })).toBeInTheDocument();
+    expect(screen.queryByText("Verifying with Gmail…")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("New app password for sales@acme.io"), { target: { value: "abcd efgh ijkl mnop" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save password" }));
+    expect(await screen.findByRole("button", { name: "Verifying with Gmail…" })).toBeDisabled();
+  });
+
   it("links to Google's app password page in a new tab next to each app password input", async () => {
     wrap(<SendersSection primaryEmail={null} primaryLimit={50} onSaved={() => {}} />);
     fireEvent.click(await screen.findByRole("button", { name: "Change password" }));
