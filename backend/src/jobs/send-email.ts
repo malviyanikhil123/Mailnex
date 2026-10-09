@@ -15,9 +15,15 @@ import { buildContactVars } from "./contact-vars.js";
 
 export interface ContactRow {
   id: number;
-  companyName: string;
+  companyName: string | null;
   location: string | null;
   email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  /** Extra spreadsheet columns ({{key}} → value). */
+  customFields?: Record<string, unknown> | null;
   status: string;
   retryCount: number;
   lastContactedAt?: Date | null;
@@ -191,7 +197,7 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
   const personalized = await deps.personalize({
     template: rendered,
     vars: {
-      company: contact.companyName,
+      company: contact.companyName ?? "",
       location: contact.location ?? "",
       candidate: { name: profile.name ?? "", email: profile.email },
     },

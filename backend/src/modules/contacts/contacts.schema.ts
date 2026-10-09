@@ -12,3 +12,13 @@ export const listContactsQuerySchema = z.object({
 });
 
 export type ListContactsQuery = z.infer<typeof listContactsQuerySchema>;
+
+/** Without page/limit every import is returned (the import pickers need them all). */
+export const listImportsQuerySchema = z.object({
+  search: z.string().trim().max(200).optional(),
+  sort: z.enum(["newest", "oldest"]).default("oldest"),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+export type ListImportsQuery = z.infer<typeof listImportsQuerySchema>;

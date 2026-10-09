@@ -53,6 +53,7 @@ describe("ContactsService.importFromFile (unit, mocked repo)", () => {
     );
     expect(mockBulkInsert).toHaveBeenCalledOnce();
     expect(mockBulkInsert).toHaveBeenCalledWith(userId, expect.any(Array), 42);
+    expect(mockBulkInsert.mock.calls[0][1]).toHaveLength(3);
     expect(mockUpdateCounts).toHaveBeenCalledWith(
       42,
       expect.objectContaining({ total: 5, imported: 3, invalid: 1, duplicate: 1 }),
@@ -87,6 +88,77 @@ describe("ContactsService.importFromFile (unit, mocked repo)", () => {
     const userId = 1;
 
     await expect(service.importFromFile(userId, tmpFile, "err.xlsx", jobId)).rejects.toThrow("DB down");
+    await expect(fs.access(tmpFile)).rejects.toThrow();
+
+    const { importProgress } = await import("./contacts.service.js");
+    expect(importProgress.get(jobId)).toMatchObject({ done: true, error: "Import failed. Please try again." });
+  });
+
+  it("imports generic contacts: names, phone, website and custom fields; only email is required", async () => {
+    const tmpFile = path.join(os.tmpdir(), `${crypto.randomUUID()}.xlsx`);
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Sheet1");
+    ws.addRow(["Name", "Email", "Phone", "Website", "Industry"]);
+    ws.addRow(["Ada Lovelace", "ada@engines.io", "+44 1234", "engines.io", "Computing"]);
+    ws.addRow(["", "solo@x.io", "", "", ""]);
+    ws.addRow(["No Email", "", "", "", "Retail"]);
+    await wb.xlsx.writeFile(tmpFile);
+
+    const { ContactsService } = await import("./contacts.service.js");
+    const { ContactsRepo } = await import("./contacts.repo.js");
+
+    const bulkInsert = vi.fn().mockResolvedValue({ inserted: 2 });
+    const recordImport = vi.fn().mockResolvedValue({ id: 5 });
+    const fakeRepo = {
+      bulkInsert,
+      recordImport,
+      updateImportCounts: vi.fn().mockResolvedValue(undefined),
+    } as unknown as InstanceType<typeof ContactsRepo>;
+
+    const summary = await new ContactsService(fakeRepo).importFromFile(1, tmpFile, "people.xlsx", crypto.randomUUID());
+
+    expect(summary).toEqual({ total: 3, imported: 2, skipped: 0, duplicate: 0, invalid: 1 });
+    expect(recordImport).toHaveBeenCalledWith(1, expect.objectContaining({ customFieldKeys: ["industry"] }));
+    const rows = bulkInsert.mock.calls[0][1];
+    expect(rows).toEqual([
+      {
+        email: "ada@engines.io",
+        firstName: "Ada",
+        lastName: "Lovelace",
+        companyName: null,
+        phone: "+44 1234",
+        website: "engines.io",
+        location: null,
+        customFields: { industry: "Computing" },
+      },
+      {
+        email: "solo@x.io",
+        firstName: null,
+        lastName: null,
+        companyName: null,
+        phone: null,
+        website: null,
+        location: null,
+        customFields: { industry: "" },
+      },
+    ]);
+  });
+
+  it("finishes the job with a readable error when the file is not a spreadsheet", async () => {
+    const tmpFile = path.join(os.tmpdir(), `${crypto.randomUUID()}.xlsx`);
+    await fs.writeFile(tmpFile, "this is not a zip file");
+
+    const { ContactsService, importProgress } = await import("./contacts.service.js");
+    const { ContactsRepo } = await import("./contacts.repo.js");
+    const recordImport = vi.fn();
+    const fakeRepo = { recordImport } as unknown as InstanceType<typeof ContactsRepo>;
+
+    const jobId = crypto.randomUUID();
+    await expect(new ContactsService(fakeRepo).importFromFile(1, tmpFile, "bad.xlsx", jobId)).rejects.toThrow(
+      /Could not read the file/,
+    );
+    expect(importProgress.get(jobId)).toMatchObject({ done: true, error: expect.stringMatching(/\.xlsx or \.csv/) });
+    expect(recordImport).not.toHaveBeenCalled();
     await expect(fs.access(tmpFile)).rejects.toThrow();
   });
 });
@@ -129,6 +201,26 @@ describe.skipIf(!dbEnabled)("ContactsRepo integration (DB gated)", () => {
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0].email).toBe("alpha@alpha.com");
     expect(result.total).toBe(1);
+  });
+
+  it("list search matches first name, last name and the full name", async () => {
+    const { contactsRepo } = await import("./contacts.repo.js");
+    const { db } = await import("../../db/index.js");
+    const { contacts } = await import("../../db/schema/contacts.js");
+
+    await db.delete(contacts);
+    await contactsRepo.bulkInsert(userId, [
+      { email: "ada@x.io", firstName: "Ada", lastName: "Lovelace", customFields: { industry: "Computing" } },
+      { email: "grace@x.io", firstName: "Grace", lastName: "Hopper" },
+    ]);
+
+    for (const search of ["ada", "lovelace", "Ada Lovelace"]) {
+      const result = await contactsRepo.list(userId, { search, page: 1, limit: 10 });
+      expect(result.rows.map((r) => r.email)).toEqual(["ada@x.io"]);
+    }
+    const [ada] = (await contactsRepo.list(userId, { search: "ada", page: 1, limit: 10 })).rows;
+    expect(ada.companyName).toBeNull();
+    expect(ada.customFields).toEqual({ industry: "Computing" });
   });
 
   it("getById returns contact or null", async () => {
@@ -184,9 +276,29 @@ describe.skipIf(!dbEnabled)("ContactsRepo integration (DB gated)", () => {
       invalid: 1,
     });
 
-    const imports = await contactsRepo.listImports(userId);
+    const { imports, total } = await contactsRepo.listImports(userId);
+    expect(total).toBe(1);
     expect(imports).toHaveLength(1);
     expect(imports[0].fileName).toBe("test.xlsx");
     expect(imports[0].importedRows).toBe(8);
+  });
+
+  it("listImports filters by name or file name, sorts and paginates", async () => {
+    const { contactsRepo } = await import("./contacts.repo.js");
+    const { db } = await import("../../db/index.js");
+    const { contactsImports } = await import("../../db/schema/imports.js");
+
+    await db.delete(contactsImports);
+    const counts = { total: 1, imported: 1, skipped: 0, duplicate: 0, invalid: 0 };
+    await contactsRepo.recordImport(userId, { ...counts, name: "Bakeries", fileName: "a.xlsx" });
+    await contactsRepo.recordImport(userId, { ...counts, name: null, fileName: "bakery-leads.csv" });
+    await contactsRepo.recordImport(userId, { ...counts, name: "Gyms", fileName: "c.xlsx" });
+
+    const found = await contactsRepo.listImports(userId, { search: "bake", sort: "oldest" });
+    expect(found.imports.map((i) => i.fileName)).toEqual(["a.xlsx", "bakery-leads.csv"]);
+
+    const page = await contactsRepo.listImports(userId, { sort: "newest", page: 1, limit: 2 });
+    expect(page.total).toBe(3);
+    expect(page.imports.map((i) => i.fileName)).toEqual(["c.xlsx", "bakery-leads.csv"]);
   });
 });
