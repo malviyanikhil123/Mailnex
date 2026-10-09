@@ -1,14 +1,22 @@
-import { pgTable, serial, text, integer, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, jsonb, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { users } from "./users.js";
 import { contactStatus } from "./enums.js";
 import { contactsImports } from "./imports.js";
 export const contacts = pgTable("contacts", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  companyName: text("company_name").notNull(),
+  // Only the email is required; every other field is whatever the spreadsheet had.
+  companyName: text("company_name"),
   location: text("location"),
   email: text("email").notNull(),
+  // Legacy single-name column (older imports, lead discovery). New imports fill first/last name.
   contactPerson: text("contact_person"),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  phone: text("phone"),
+  website: text("website"),
+  // Extra spreadsheet columns keyed by normalized header (e.g. "industry"), usable as {{industry}}.
+  customFields: jsonb("custom_fields").$type<Record<string, string>>().notNull().default({}),
   importId: integer("import_id").references(() => contactsImports.id, { onDelete: "set null" }),
   status: contactStatus("status").notNull().default("PENDING"),
   retryCount: integer("retry_count").notNull().default(0),

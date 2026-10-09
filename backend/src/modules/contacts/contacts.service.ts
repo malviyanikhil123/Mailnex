@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
-import { parseContactsXlsx } from "../../integrations/excel/parser.js";
+import { parseContactsXlsx, type ParsedContact, type ParseResult } from "../../integrations/excel/parser.js";
 import { isValidEmail } from "../../utils/email-validator.js";
+import { logger } from "../../utils/logger.js";
 import { contactsRepo as defaultRepo, ContactsRepo } from "./contacts.repo.js";
 
 export type ImportProgressEntry = {
@@ -8,6 +9,8 @@ export type ImportProgressEntry = {
   total: number;
   done: boolean;
   summary?: ImportSummaryResult;
+  /** Set when the import failed; done is true then and there is no summary. */
+  error?: string;
 };
 
 export type ImportSummaryResult = {
@@ -23,6 +26,15 @@ export type ImportSummaryResult = {
  * Exported so the controller's progress endpoint and tests can read it.
  */
 export const importProgress = new Map<string, ImportProgressEntry>();
+
+const PROGRESS_TTL_MS = 5 * 60 * 1000;
+
+/** The upload is not a readable spreadsheet; the message is shown to the user. */
+class UnreadableFileError extends Error {
+  constructor() {
+    super("Could not read the file. Upload an .xlsx or .csv file.");
+  }
+}
 
 export class ContactsService {
   constructor(private repo: ContactsRepo) {}
@@ -41,13 +53,20 @@ export class ContactsService {
       let invalidCount = 0;
       let withinFileDupCount = 0;
       const seenEmails = new Set<string>();
-      const validRows: Array<{ companyName: string; location: string; email: string }> = [];
-      const allRows: Array<{ companyName: string; location: string; email: string }> = [];
+      const validRows: ParsedContact[] = [];
+      const allRows: ParsedContact[] = [];
 
       // Stream all rows into memory first so we can report total
-      const totalRows = await parseContactsXlsx(filePath, (row) => {
-        allRows.push(row);
-      });
+      let parsed: ParseResult;
+      try {
+        parsed = await parseContactsXlsx(filePath, (row) => {
+          allRows.push(row);
+        });
+      } catch (err) {
+        logger.warn({ err, jobId }, "import: could not read the uploaded file");
+        throw new UnreadableFileError();
+      }
+      const totalRows = parsed.total;
 
       // Update total in progress
       importProgress.set(jobId, { processed: 0, total: totalRows, done: false });
@@ -86,6 +105,7 @@ export class ContactsService {
         skipped: 0,
         duplicate: 0,
         invalid: 0,
+        customFieldKeys: parsed.customFieldKeys,
       });
 
       // Bulk-insert unique valid rows; onConflictDoNothing handles DB-level duplicates
@@ -100,7 +120,8 @@ export class ContactsService {
       const dbDups = validRows.length - inserted;
 
       const duplicateCount = withinFileDupCount + dbDups;
-      const skippedCount = 0;
+      // Rows past the parser's row cap are never read.
+      const skippedCount = parsed.skipped;
 
       const summary: ImportSummaryResult = {
         total: totalRows,
@@ -126,9 +147,20 @@ export class ContactsService {
         done: true,
         summary,
       });
-      setTimeout(() => importProgress.delete(jobId), 5 * 60 * 1000).unref?.();
+      setTimeout(() => importProgress.delete(jobId), PROGRESS_TTL_MS).unref?.();
 
       return summary;
+    } catch (err) {
+      // Finish the job so the client stops polling and can show why.
+      const current = importProgress.get(jobId);
+      importProgress.set(jobId, {
+        processed: current?.processed ?? 0,
+        total: current?.total ?? 0,
+        done: true,
+        error: err instanceof UnreadableFileError ? err.message : "Import failed. Please try again.",
+      });
+      setTimeout(() => importProgress.delete(jobId), PROGRESS_TTL_MS).unref?.();
+      throw err;
     } finally {
       // Delete the temp uploaded file on both success and failure
       await fs.promises.unlink(filePath).catch(() => {});

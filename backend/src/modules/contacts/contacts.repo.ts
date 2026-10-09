@@ -3,16 +3,21 @@ import { contacts } from "../../db/schema/contacts.js";
 import { contactsImports } from "../../db/schema/imports.js";
 import { campaignQueue } from "../../db/schema/campaign.js";
 import { emailLogs } from "../../db/schema/logs.js";
-import { ilike, eq, or, and, count, sql } from "drizzle-orm";
-import type { ListContactsQuery } from "./contacts.schema.js";
+import { ilike, eq, or, and, asc, desc, count, sql } from "drizzle-orm";
+import type { ListContactsQuery, ListImportsQuery } from "./contacts.schema.js";
 import type { contactStatus } from "../../db/schema/enums.js";
 
 type ContactStatusValue = typeof contactStatus.enumValues[number];
 
 export type ContactInsertRow = {
-  companyName: string;
-  location: string;
   email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  companyName?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  location?: string | null;
+  customFields?: Record<string, string>;
 };
 
 export type ImportSummary = {
@@ -23,6 +28,7 @@ export type ImportSummary = {
   skipped: number;
   duplicate: number;
   invalid: number;
+  customFieldKeys?: string[];
 };
 
 export class ContactsRepo {
@@ -51,10 +57,14 @@ export class ContactsRepo {
 
     const conditions = [eq(contacts.userId, userId)];
     if (search) {
+      const like = `%${search}%`;
       conditions.push(
         or(
-          ilike(contacts.companyName, `%${search}%`),
-          ilike(contacts.email, `%${search}%`),
+          ilike(contacts.companyName, like),
+          ilike(contacts.email, like),
+          ilike(contacts.contactPerson, like),
+          // Matches the first name, the last name and "first last" alike.
+          sql`concat_ws(' ', ${contacts.firstName}, ${contacts.lastName}) ilike ${like}`,
         )!,
       );
     }
@@ -68,7 +78,7 @@ export class ContactsRepo {
     const where = and(...conditions);
 
     const [rows, totalResult] = await Promise.all([
-      db.select().from(contacts).where(where).limit(limit).offset(offset),
+      db.select().from(contacts).where(where).orderBy(asc(contacts.id)).limit(limit).offset(offset),
       db.select({ total: count() }).from(contacts).where(where),
     ]);
 
@@ -107,6 +117,7 @@ export class ContactsRepo {
         skippedRows: summary.skipped,
         duplicateRows: summary.duplicate,
         invalidRows: summary.invalid,
+        customFieldKeys: summary.customFieldKeys ?? [],
       })
       .returning();
     return row;
@@ -138,9 +149,23 @@ export class ContactsRepo {
     return row ?? null;
   }
 
-  /** Imports with how many of their contacts exist now and how many are still pending. */
-  async listImports(userId: number) {
-    return db
+  /**
+   * Imports with how many of their contacts exist now and how many are still pending,
+   * filtered by name / file name. Paginated only when page or limit is given.
+   */
+  async listImports(userId: number, query: Partial<ListImportsQuery> = {}) {
+    const conditions = [eq(contactsImports.userId, userId)];
+    if (query.search) {
+      const like = `%${query.search}%`;
+      conditions.push(or(ilike(contactsImports.name, like), ilike(contactsImports.fileName, like))!);
+    }
+    const where = and(...conditions);
+    const order =
+      query.sort === "newest"
+        ? [desc(contactsImports.createdAt), desc(contactsImports.id)]
+        : [asc(contactsImports.createdAt), asc(contactsImports.id)];
+
+    const rowsQuery = db
       .select({
         id: contactsImports.id,
         name: contactsImports.name,
@@ -150,6 +175,7 @@ export class ContactsRepo {
         skippedRows: contactsImports.skippedRows,
         duplicateRows: contactsImports.duplicateRows,
         invalidRows: contactsImports.invalidRows,
+        customFieldKeys: contactsImports.customFieldKeys,
         createdAt: contactsImports.createdAt,
         // Columns are spelled out with table names: drizzle renders them unqualified here,
         // and a bare "id" inside the subquery would resolve to contacts.id.
@@ -157,8 +183,21 @@ export class ContactsRepo {
         pendingCount: sql<number>`(select count(*)::int from "contacts" c where c."import_id" = "contacts_imports"."id" and c."status" = 'PENDING')`,
       })
       .from(contactsImports)
-      .where(eq(contactsImports.userId, userId))
-      .orderBy(contactsImports.createdAt);
+      .where(where)
+      .orderBy(...order)
+      .$dynamic();
+
+    if (query.page === undefined && query.limit === undefined) {
+      const imports = await rowsQuery;
+      return { imports, total: imports.length };
+    }
+    const limit = query.limit ?? 20;
+    const offset = ((query.page ?? 1) - 1) * limit;
+    const [imports, totalResult] = await Promise.all([
+      rowsQuery.limit(limit).offset(offset),
+      db.select({ total: count() }).from(contactsImports).where(where),
+    ]);
+    return { imports, total: Number(totalResult[0]?.total ?? 0) };
   }
 }
 

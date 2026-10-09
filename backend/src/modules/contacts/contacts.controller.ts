@@ -7,9 +7,12 @@ import { createWriteStream } from "fs";
 import { authGuard } from "../../middleware/auth-guard.js";
 import { contactsService, importProgress } from "./contacts.service.js";
 import { contactsRepo } from "./contacts.repo.js";
-import { listContactsQuerySchema } from "./contacts.schema.js";
+import { listContactsQuerySchema, listImportsQuerySchema } from "./contacts.schema.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../utils/logger.js";
+
+// .xls (the pre-2007 binary format) cannot be read by ExcelJS.
+const IMPORT_EXTENSIONS = [".xlsx", ".csv"];
 
 function getUserId(req: FastifyRequest): number {
   return (req.user as { sub: number }).sub;
@@ -26,14 +29,25 @@ export async function contactsController(app: FastifyInstance) {
         return reply.code(400).send({ error: "No file uploaded" });
       }
 
+      const ext = path.extname(data.filename).toLowerCase();
+      if (!IMPORT_EXTENSIONS.includes(ext)) {
+        data.file.resume();
+        return reply.code(400).send({ error: "Upload an .xlsx or .csv file" });
+      }
+
       const uploadDir = path.resolve(env.UPLOAD_DIR, "tmp");
       await fs.mkdir(uploadDir, { recursive: true });
 
       const jobId = crypto.randomUUID();
-      const ext = path.extname(data.filename) || ".xlsx";
       const tmpPath = path.join(uploadDir, `${jobId}${ext}`);
 
-      await pipeline(data.file, createWriteStream(tmpPath));
+      try {
+        await pipeline(data.file, createWriteStream(tmpPath));
+      } catch (err) {
+        // e.g. the 20 MB upload limit: don't leave the partial file behind.
+        await fs.unlink(tmpPath).catch(() => {});
+        throw err;
+      }
 
       const fileName = data.filename;
       const rawName = (data.fields?.name as { value?: unknown } | undefined)?.value;
@@ -66,8 +80,9 @@ export async function contactsController(app: FastifyInstance) {
     { preHandler: authGuard },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const userId = getUserId(req);
-      const imports = await contactsRepo.listImports(userId);
-      return reply.code(200).send({ imports });
+      const query = listImportsQuerySchema.parse(req.query);
+      const result = await contactsRepo.listImports(userId, query);
+      return reply.code(200).send(result);
     },
   );
 
