@@ -14,7 +14,6 @@ import Contacts from "./pages/Contacts";
 import Templates from "./pages/Templates";
 import Campaign from "./pages/Campaign";
 import Logs from "./pages/Logs";
-import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 
 const queryClient = new QueryClient({
@@ -47,7 +46,8 @@ export default function App() {
               <Route path="/templates" element={<Templates />} />
               <Route path="/campaign" element={<Campaign />} />
               <Route path="/logs" element={<Logs />} />
-              <Route path="/analytics" element={<Analytics />} />
+              {/* Analytics was merged into the Dashboard; keep old links working. */}
+              <Route path="/analytics" element={<Navigate to="/" replace />} />
               <Route path="/settings" element={<Settings />} />
             </Route>
           </Route>

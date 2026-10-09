@@ -7,6 +7,8 @@ export interface User {
 export interface LoginResponse {
   accessToken: string;
   refreshToken: string;
+  /** Echoes the "Remember me" choice; carried through every token refresh. */
+  rememberMe: boolean;
   user: User;
 }
 

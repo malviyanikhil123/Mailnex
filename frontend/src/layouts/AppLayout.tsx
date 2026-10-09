@@ -7,7 +7,6 @@ import {
   FileText,
   Send,
   ScrollText,
-  BarChart3,
   Settings as SettingsIcon,
   Moon,
   Sun,
@@ -15,6 +14,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "../store/theme";
 import { useAuth } from "../store/auth";
+import { authApi } from "../services/auth.api";
 import { PwaInstallBanner } from "../components/PwaInstallBanner";
 
 const nav = [
@@ -24,7 +24,6 @@ const nav = [
   { to: "/templates", label: "Templates", icon: FileText },
   { to: "/campaign", label: "Campaigns", icon: Send },
   { to: "/logs", label: "Logs", icon: ScrollText },
-  { to: "/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -38,7 +37,9 @@ export function AppLayout() {
   const lastScrollY = useRef(0);
   const mainRef = useRef<HTMLElement>(null);
 
-  const logout = () => {
+  const logout = async () => {
+    // Revoke the refresh token server-side too; sign out locally even if that fails.
+    await authApi.logout().catch(() => {});
     clear();
     navigate("/login");
   };
