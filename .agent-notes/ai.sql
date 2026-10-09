@@ -21,9 +21,9 @@ CREATE TABLE IF NOT EXISTS "ai_provider_keys" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "campaigns" ADD COLUMN "ai_provider" text;   -- null = the user's default provider
+ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "ai_provider" text;   -- null = the user's default provider
 --> statement-breakpoint
-ALTER TABLE "campaigns" ADD COLUMN "ai_model" text;      -- null = that provider's saved default model
+ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "ai_model" text;      -- null = that provider's saved default model
 --> statement-breakpoint
 DO $$ BEGIN
  ALTER TABLE "ai_provider_keys" ADD CONSTRAINT "ai_provider_keys_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
@@ -41,12 +41,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS "ai_provider_keys_user_provider_unique" ON "ai
 -- 'gemini-3.5-flash-lite' is the first model the Gemini-only code tried
 -- (integrations/gemini/model-factory.ts CANDIDATE_MODELS[0]) and is also Google's
 -- default in integrations/ai/providers.ts.
--- No user can have an ai_provider_keys row yet, so every backfilled row is the
--- user's only one and is_default = true keeps "one default per user".
+-- Only users with no ai_provider_keys row at all are backfilled, so every backfilled
+-- row is the user's only one and is_default = true keeps "one default per user" —
+-- even if this statement is re-run after users have started adding keys (a re-run
+-- must not add a second default next to a provider the user picked since).
 INSERT INTO "ai_provider_keys" ("user_id", "provider", "api_key_enc", "default_model", "is_default", "created_at", "updated_at")
-SELECT "user_id", 'google', "gemini_api_key_enc", 'gemini-3.5-flash-lite', true, now(), now()
-FROM "app_settings"
-WHERE "gemini_api_key_enc" IS NOT NULL AND "gemini_api_key_enc" <> ''
+SELECT s."user_id", 'google', s."gemini_api_key_enc", 'gemini-3.5-flash-lite', true, now(), now()
+FROM "app_settings" s
+WHERE s."gemini_api_key_enc" IS NOT NULL AND s."gemini_api_key_enc" <> ''
+  AND NOT EXISTS (SELECT 1 FROM "ai_provider_keys" k WHERE k."user_id" = s."user_id")
 ON CONFLICT ("user_id", "provider") DO NOTHING;
 
 -- Existing campaigns keep ai_provider / ai_model NULL, i.e. they use the user's
