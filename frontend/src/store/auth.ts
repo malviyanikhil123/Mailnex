@@ -60,10 +60,14 @@ export const authStorage: PersistStorage<PersistedAuth> = {
     const [keep, drop] = value.state.rememberMe ? [local, session] : [session, local];
     write(keep, name, value);
     write(drop, name, null);
+    // A tab still running the pre-rename bundle can re-create the old key after the
+    // migration; drop it on every save so sign-out never leaves tokens behind there.
+    write(local, LEGACY_AUTH_STORAGE_KEY, null);
   },
   removeItem: (name) => {
     write(local, name, null);
     write(session, name, null);
+    write(local, LEGACY_AUTH_STORAGE_KEY, null);
   },
 };
 

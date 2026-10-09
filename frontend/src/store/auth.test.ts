@@ -75,6 +75,19 @@ describe("legacy storage key", () => {
     expect(useAuth.getState()).toMatchObject({ accessToken: "old-a", refreshToken: "old-r", user, rememberMe: true });
   });
 
+  it("drops an old key re-created by a stale tab when signing out", async () => {
+    useAuth.getState().setAuth({ accessToken: "a", refreshToken: "r", user, rememberMe: true });
+    // A tab still on the old bundle writes the old key again after the migration.
+    localStorage.setItem(LEGACY_AUTH_STORAGE_KEY, JSON.stringify(legacy));
+
+    useAuth.getState().clear();
+    sessionStorage.clear(); // a fresh tab / browser restart
+    await useAuth.persist.rehydrate();
+
+    expect(localStorage.getItem(LEGACY_AUTH_STORAGE_KEY)).toBeNull();
+    expect(useAuth.getState()).toMatchObject({ accessToken: null, refreshToken: null, user: null });
+  });
+
   it("prefers the new key when both exist", () => {
     localStorage.setItem(LEGACY_AUTH_STORAGE_KEY, JSON.stringify(legacy));
     useAuth.getState().setAuth({ accessToken: "a", refreshToken: "r", user });
