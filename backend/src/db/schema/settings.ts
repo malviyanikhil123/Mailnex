@@ -1,6 +1,7 @@
 import { pgTable, serial, text, integer, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { users } from "./users.js";
-// Per-user app settings; secret fields hold AES-GCM ciphertext. candidateProfile is JSON text.
+// Per-user app settings; secret fields hold AES-GCM ciphertext. candidateProfile is the
+// sender's "My Profile" as JSON text (column name kept from the job-seeker days).
 export const appSettings = pgTable("app_settings", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }).unique(),
@@ -11,6 +12,7 @@ export const appSettings = pgTable("app_settings", {
   // read or written; kept for rollback safety until a later migration drops it.
   geminiApiKeyEnc: text("gemini_api_key_enc"),
   candidateProfile: text("candidate_profile").notNull().default("{}"),
+  // Legacy single resume. Existing values are moved into documents by a migration; no longer read.
   resumePath: text("resume_path"),
   // Daily cap for the primary Gmail, shared by every campaign that sends from it.
   senderDailyLimit: integer("sender_daily_limit").notNull().default(100),

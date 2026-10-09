@@ -7,12 +7,16 @@ import { Modal } from "../components/ui/Modal";
 import { toast } from "../store/toast";
 import type { Template } from "../types/api";
 
-const empty: TemplateInput = { name: "", subject: "", body: "", category: "general", active: false, resumeId: null };
+const empty: TemplateInput = { name: "", subject: "", body: "", category: "general", active: false, documentId: null };
 
 export default function Templates() {
   const qc = useQueryClient();
   const { data = [], isLoading, isError } = useQuery({ queryKey: ["templates"], queryFn: templatesApi.list });
-  const { data: resumes = [] } = useQuery({ queryKey: ["resumes"], queryFn: settingsApi.listResumes });
+  const { data: documents = [] } = useQuery({
+    queryKey: ["documents"],
+    queryFn: settingsApi.listDocuments,
+    select: (d) => d.documents,
+  });
   const [editing, setEditing] = useState<Template | null>(null);
   const [form, setForm] = useState<TemplateInput>(empty);
   const [open, setOpen] = useState(false);
@@ -114,7 +118,7 @@ export default function Templates() {
       body: t.body,
       category: t.category,
       active: t.active,
-      resumeId: t.resumeId ?? null,
+      documentId: t.documentId ?? null,
     });
     setOpen(true);
   };
@@ -262,13 +266,13 @@ export default function Templates() {
                     <span>•</span>
                     <span>v{t.version}</span>
                     <span>•</span>
-                    {t.resume ? (
+                    {t.document ? (
                       <span className="inline-flex items-center gap-1 rounded-md bg-[#BAE6FD] px-2 py-0.5 text-[11px] font-semibold text-[#0F172A] border border-[#7dd3fc] dark:bg-[#164549] dark:text-[#E3FDFD] dark:border-transparent">
-                        📄 {t.resume.name}
+                        📄 {t.document.name}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-500">
-                        📄 Default Resume
+                        No attachment
                       </span>
                     )}
                     <span>•</span>
@@ -382,27 +386,27 @@ export default function Templates() {
 
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
-                Connected Resume / CV
+                Attach document
               </label>
               <select
-                value={form.resumeId ?? ""}
+                value={form.documentId ?? ""}
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    resumeId: e.target.value ? Number(e.target.value) : null,
+                    documentId: e.target.value ? Number(e.target.value) : null,
                   })
                 }
                 className="w-full rounded-lg border border-[#BAE6FD] bg-[#F1F5F9] px-3 py-2 text-sm text-gray-900 outline-none focus:border-[#60A5FA] focus:ring-2 focus:ring-[#60A5FA]/30 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
               >
-                <option value="">Default Resume (Global)</option>
-                {resumes.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    📄 {r.name} ({r.fileName})
+                <option value="">No attachment</option>
+                {documents.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    📄 {d.name} ({d.fileName})
                   </option>
                 ))}
               </select>
               <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-400">
-                When sending emails with this template, this specific resume will be attached. (Manage resumes in Settings)
+                This file is attached to every email sent with this template. (Manage files in Settings → Documents)
               </p>
             </div>
 

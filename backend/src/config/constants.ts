@@ -3,6 +3,10 @@ export const LIMITS = {
   RETRY_DELAYS_MS: [3_600_000, 21_600_000, 86_400_000] as const,
   /** Default daily cap of the primary Gmail across all campaigns sending from it. */
   PRIMARY_SENDER_DAILY: 100,
+  /** Documents (files templates attach to emails): count per user, size per file, file types. */
+  DOCUMENTS_PER_USER: 10,
+  DOCUMENT_MAX_BYTES: 5 * 1024 * 1024,
+  DOCUMENT_EXTENSIONS: ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv", "txt", "png", "jpg", "jpeg"],
 } as const;
 
 export const INBOX = {

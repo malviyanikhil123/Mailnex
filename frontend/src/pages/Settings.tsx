@@ -4,9 +4,9 @@ import { Spinner, ErrorState } from "../components/ui/primitives";
 import { GmailSection } from "../components/settings/GmailSection";
 import { AiProvidersSection } from "../components/settings/AiProvidersSection";
 import { SendersSection } from "../components/settings/SendersSection";
-import { CandidateSection } from "../components/settings/CandidateSection";
+import { ProfileSection } from "../components/settings/ProfileSection";
 import { ProfileFieldsSection } from "../components/settings/ProfileFieldsSection";
-import { ResumeSection } from "../components/settings/ResumeSection";
+import { DocumentsSection } from "../components/settings/DocumentsSection";
 
 export default function Settings() {
   const qc = useQueryClient();
@@ -22,9 +22,9 @@ export default function Settings() {
       <GmailSection configured={data.gmailConfigured} email={data.gmailEmail} onSaved={invalidate} />
       <AiProvidersSection onSaved={invalidate} />
       <SendersSection primaryEmail={data.gmailEmail} primaryLimit={data.senderDailyLimit} onSaved={invalidate} />
-      <CandidateSection profile={data.candidate} onSaved={invalidate} />
+      <ProfileSection profile={data.profile} onSaved={invalidate} />
       <ProfileFieldsSection fields={data.profileFields} onSaved={invalidate} />
-      <ResumeSection fileName={data.resumeFileName} onSaved={invalidate} />
+      <DocumentsSection />
     </div>
   );
 }

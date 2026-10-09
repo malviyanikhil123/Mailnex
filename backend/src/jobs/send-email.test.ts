@@ -10,7 +10,7 @@ function makeDeps(overrides?: {
   testEmail?: string | null;
   retryCount?: number;
   sendImpl?: () => Promise<{ messageId: string }>;
-  template?: { id: number; subject: string; body: string } | null;
+  template?: { id: number; subject: string; body: string; documentId?: number | null } | null;
   /** What the settings port resolves for the campaign's provider choice. */
   aiConfig?: AiModelConfig | null;
   aiEnabled?: boolean;
@@ -56,15 +56,17 @@ function makeDeps(overrides?: {
     templates: {
       pickRandomActive: vi.fn(async () =>
         overrides?.template === undefined
-          ? { id: 7, subject: "Hi {{company}}", body: "Dear {{company}} in {{location}}.\n{{signature}}" }
+          ? { id: 7, subject: "Hi {{company}}", body: "Dear {{company}} in {{location}}.\n{{signature}}", documentId: 3 }
           : overrides.template,
       ),
     },
     settings: {
       getAiConfig: vi.fn(async () => overrides?.aiConfig ?? null),
-      getCandidateProfile: vi.fn(async () => ({ name: "Nikhil", email: "n@x.dev" })),
+      getSenderProfile: vi.fn(async () => ({ name: "Nikhil", email: "n@x.dev" })),
       buildSignature: vi.fn(() => "Regards,\nNikhil"),
-      getResumePath: vi.fn(async () => "/uploads/resume.pdf"),
+      getDocumentAttachment: vi.fn(async (documentId?: number | null) =>
+        documentId === 3 ? { filename: "Price list.pdf", path: "/uploads/documents/abc.pdf" } : null,
+      ),
       getProfileVars: vi.fn(async () => overrides?.profileVars ?? {}),
     },
     personalize: vi.fn(async (input) => ({
@@ -115,11 +117,34 @@ describe("sendEmailJob", () => {
     expect(res.outcome).toBe("sent");
     expect(send.mock.calls[0][0].to).toBe("hr@acme.com");
     expect(send.mock.calls[0][0].attachments).toEqual([
-      { filename: "resume.pdf", path: "/uploads/resume.pdf" },
+      { filename: "Price list.pdf", path: "/uploads/documents/abc.pdf" },
     ]);
+    expect(deps.settings.getDocumentAttachment).toHaveBeenCalledWith(3);
     expect(logs[0].status).toBe("SENT");
     expect(campaign.markContactSent).toHaveBeenCalledWith(1, NOW);
     expect(campaign.incQuota).toHaveBeenCalledWith(NOW);
+  });
+
+  it("template without a document: sends with no attachments", async () => {
+    const { deps, send } = makeDeps({ template: { id: 8, subject: "Hi", body: "Hello", documentId: null } });
+    const res = await sendEmailJob(1, deps);
+    expect(res.outcome).toBe("sent");
+    expect(send.mock.calls[0][0].attachments).toBeUndefined();
+  });
+
+  it("template whose document was deleted: still sends, just without the attachment", async () => {
+    const { deps, send, logs } = makeDeps({ template: { id: 9, subject: "Hi", body: "Hello", documentId: 42 } });
+    const res = await sendEmailJob(1, deps);
+    expect(res.outcome).toBe("sent");
+    expect(deps.settings.getDocumentAttachment).toHaveBeenCalledWith(42);
+    expect(send.mock.calls[0][0].attachments).toBeUndefined();
+    expect(logs[0].status).toBe("SENT");
+  });
+
+  it("DRAFT mode never looks up the attachment", async () => {
+    const { deps } = makeDeps({ mode: "DRAFT" });
+    await sendEmailJob(1, deps);
+    expect(deps.settings.getDocumentAttachment).not.toHaveBeenCalled();
   });
 
   it("Quota error → pauses campaign, leaves contact PENDING (not failed/bounced)", async () => {
@@ -209,6 +234,32 @@ describe("sendEmailJob", () => {
     expect(sent.html).not.toContain("{{");
   });
 
+  it("interpolates the {{my_*}} sender variables from My Profile", async () => {
+    const { deps, send } = makeDeps({
+      template: {
+        id: 98,
+        subject: "{{my_company}} x {{company}}",
+        body: "I'm {{my_name}} ({{my_email}}, {{my_phone}}).\n{{my_website}} | {{my_linkedin}}\n{{signature}}",
+      },
+    });
+    deps.settings.getSenderProfile = vi.fn(async () => ({
+      name: "Priya Shah",
+      company: "Northwind",
+      email: "priya@northwind.com",
+      phone: "+1 555 0100",
+      website: "https://northwind.com",
+      linkedin: "https://linkedin.com/in/priya",
+    }));
+
+    await sendEmailJob(1, deps);
+    const sent = send.mock.calls[0][0];
+    expect(sent.subject).toBe("Northwind x Acme");
+    for (const value of ["Priya Shah", "priya@northwind.com", "+1 555 0100", "https://northwind.com", "https://linkedin.com/in/priya"]) {
+      expect(sent.html).toContain(value);
+    }
+    expect(sent.html).not.toContain("{{");
+  });
+
   it("interpolates LinkedIn, GitHub, Portfolio, phone, and email variables", async () => {
     const { deps, send } = makeDeps({
       mode: "LIVE",
@@ -227,7 +278,7 @@ describe("sendEmailJob", () => {
       },
     });
 
-    deps.settings.getCandidateProfile = vi.fn(async () => ({
+    deps.settings.getSenderProfile = vi.fn(async () => ({
       name: "Alex Morgan",
       email: "alex@example.com",
       phone: "+91 9876543210",

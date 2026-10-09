@@ -1,4 +1,3 @@
-import * as path from "path";
 import { LIMITS } from "../config/constants.js";
 import { interpolate } from "../utils/interpolate.js";
 import { formatEmailHtml } from "../utils/format-email.js";
@@ -6,7 +5,7 @@ import { logger } from "../utils/logger.js";
 import { classifyFailure } from "../integrations/email/classify-failure.js";
 import type { EmailProvider } from "../integrations/email/provider.js";
 import type { AiModelConfig } from "../integrations/ai/model-factory.js";
-import type { CandidateProfile } from "../modules/settings/settings.schema.js";
+import type { SenderProfile } from "../modules/settings/settings.schema.js";
 import { buildSenderVars } from "./sender-vars.js";
 import { buildContactVars } from "./contact-vars.js";
 
@@ -48,10 +47,10 @@ export interface CampaignPort {
 }
 
 export interface TemplatePort {
-  pickRandomActive(options?: { isFollowup?: boolean }): Promise<{ id: number; subject: string; body: string; resumeId?: number | null } | undefined | null>;
+  pickRandomActive(options?: { isFollowup?: boolean }): Promise<{ id: number; subject: string; body: string; documentId?: number | null } | undefined | null>;
 }
 
-export interface ResumeAttachment {
+export interface DocumentAttachment {
   filename: string;
   path: string;
 }
@@ -59,10 +58,10 @@ export interface ResumeAttachment {
 export interface SettingsPort {
   /** Provider, key and model for the campaign's choice; null when no matching key is saved. */
   getAiConfig(choice: { provider: string | null; model: string | null }): Promise<AiModelConfig | null>;
-  getCandidateProfile(): Promise<CandidateProfile>;
-  buildSignature(profile: CandidateProfile): string;
-  getResumeAttachment?(resumeId?: number | null): Promise<ResumeAttachment | null>;
-  getResumePath(resumeId?: number | null): Promise<string | null>;
+  getSenderProfile(): Promise<SenderProfile>;
+  buildSignature(profile: SenderProfile): string;
+  /** The template's document as an attachment; null when it has none or it was deleted. */
+  getDocumentAttachment(documentId?: number | null): Promise<DocumentAttachment | null>;
   /** Custom "My Profile" fields as template variables ({{key}} → value). */
   getProfileVars?(): Promise<Record<string, string>>;
 }
@@ -176,7 +175,7 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
 
   // Build the fully-rendered template (signature/name/company/location), then
   // let the AI personalize on top (with template fallback inside personalize()).
-  const profile = await deps.settings.getCandidateProfile();
+  const profile = await deps.settings.getSenderProfile();
   const signature = deps.settings.buildSignature(profile);
 
   // Custom profile fields go first so the built-in variables always win.
@@ -230,15 +229,7 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
   // TEST → testEmail; LIVE → real recipient.
   const recipient = mode === "TEST" ? (settings!.testEmail as string) : contact.email;
 
-  let attachment: ResumeAttachment | null = null;
-  if (deps.settings.getResumeAttachment) {
-    attachment = await deps.settings.getResumeAttachment(template.resumeId);
-  } else {
-    const resumePath = await deps.settings.getResumePath(template.resumeId);
-    if (resumePath) {
-      attachment = { filename: path.basename(resumePath), path: resumePath };
-    }
-  }
+  const attachment = await deps.settings.getDocumentAttachment(template.documentId);
   const attachments = attachment ? [attachment] : undefined;
 
   try {
