@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { logger } from "../../utils/logger.js";
 import { splitFullName } from "../../utils/person-name.js";
+import { BUILTIN_TEMPLATE_VARS } from "../../config/constants.js";
 
 /**
  * One spreadsheet row mapped onto contact fields. Built-in fields are null when the file
@@ -232,6 +233,8 @@ function mapHeaderFields(cells: string[]): Partial<Record<Field, number>> {
   return fields;
 }
 
+const RESERVED_KEYS = new Set<string>(BUILTIN_TEMPLATE_VARS.map((k) => k.toLowerCase()));
+
 /** Every column not used by a built-in field and holding a header or any value. */
 function mapCustomColumns(
   header: string[] | null,
@@ -248,9 +251,11 @@ function mapCustomColumns(
     const title = header?.[idx] ?? "";
     if (!title && !dataRows.some((r) => r[idx])) continue;
 
-    const base = customFieldKey(title) || `column_${idx + 1}`;
+    let base = customFieldKey(title) || `column_${idx + 1}`;
+    // "LinkedIn" must not become {{linkedin}}, which the app fills from My Profile.
+    if (RESERVED_KEYS.has(base)) base = `contact_${base}`.slice(0, IMPORT_LIMITS.MAX_KEY_LENGTH);
     let key = base;
-    for (let n = 2; taken.has(key); n++) {
+    for (let n = 2; taken.has(key) || RESERVED_KEYS.has(key); n++) {
       const suffix = `_${n}`;
       key = base.slice(0, IMPORT_LIMITS.MAX_KEY_LENGTH - suffix.length) + suffix;
     }

@@ -9,6 +9,22 @@ export const LIMITS = {
   DOCUMENT_EXTENSIONS: ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv", "txt", "png", "jpg", "jpeg"],
 } as const;
 
+/**
+ * Template variables the app fills itself. Custom profile fields may not use these keys,
+ * and an imported column with one of these names is stored as contact_<name> instead.
+ */
+export const BUILTIN_TEMPLATE_VARS = [
+  // sender ("My Profile")
+  "my_name", "my_company", "my_email", "my_phone", "my_website", "my_linkedin", "signature",
+  // contact
+  "company", "location", "first_name", "last_name", "full_name",
+  "contact_email", "contact_phone", "contact_website",
+  // legacy sender variables, still filled for older templates
+  "candidateName", "name", "candidateEmail", "email", "phone",
+  "role", "targetRole", "experience", "skills", "linkedin", "LinkedIn", "github",
+  "GitHub", "portfolio", "Portfolio",
+] as const;
+
 export const INBOX = {
   SYNC_WINDOW_DAYS: 30,
   RETENTION_DAYS: 35,

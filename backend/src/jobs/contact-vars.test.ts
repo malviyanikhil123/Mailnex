@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildContactVars } from "./contact-vars.js";
+import { buildContactCustomVars, buildContactVars } from "./contact-vars.js";
 import type { ContactRow } from "./send-email.js";
 
 function contact(over: Partial<ContactRow> = {}): ContactRow {
@@ -59,20 +59,21 @@ describe("buildContactVars", () => {
     expect(buildContactVars(contact({ firstName: " ", lastName: "Lovelace" })).full_name).toBe("Lovelace");
   });
 
-  it("adds every custom field, but built-in variables win over a custom field of the same name", () => {
-    const vars = buildContactVars(
-      contact({ customFields: { industry: "Fintech", company: "WRONG", first_name: "WRONG", deal_size: 5 } }),
-    );
-    expect(vars.industry).toBe("Fintech");
-    expect(vars.deal_size).toBe("5");
+  it("leaves custom fields out of the built-in variables", () => {
+    const vars = buildContactVars(contact({ customFields: { industry: "Fintech", company: "WRONG" } }));
+    expect(vars).not.toHaveProperty("industry");
     expect(vars.company).toBe("Acme");
-    expect(vars.first_name).toBe("Ada");
+  });
+});
+
+describe("buildContactCustomVars", () => {
+  it("returns every custom field as text", () => {
+    const vars = buildContactCustomVars(contact({ customFields: { industry: "Fintech", deal_size: 5 } }));
+    expect(vars).toEqual({ industry: "Fintech", deal_size: "5" });
   });
 
-  it("ignores non-text custom values", () => {
-    const vars = buildContactVars(contact({ customFields: { nested: { a: 1 }, empty: null, blank: "" } }));
-    expect(vars).not.toHaveProperty("nested");
-    expect(vars).not.toHaveProperty("empty");
-    expect(vars.blank).toBe("");
+  it("ignores non-text custom values and keeps blanks as empty strings", () => {
+    const vars = buildContactCustomVars(contact({ customFields: { nested: { a: 1 }, empty: null, blank: "" } }));
+    expect(vars).toEqual({ blank: "" });
   });
 });

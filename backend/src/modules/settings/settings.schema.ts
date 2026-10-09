@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BUILTIN_TEMPLATE_VARS } from "../../config/constants.js";
 /** Gmail credential update — secret is write-only. */
 export const updateGmailSchema = z.object({
   email: z.string().email(),
@@ -37,17 +38,7 @@ export const updateSendingSchema = z.object({
 export type UpdateSendingInput = z.infer<typeof updateSendingSchema>;
 
 /** Template variables the send job already fills; custom fields must not shadow them. */
-export const RESERVED_PROFILE_KEYS = [
-  // sender ("My Profile")
-  "my_name", "my_company", "my_email", "my_phone", "my_website", "my_linkedin", "signature",
-  // contact
-  "company", "location", "first_name", "last_name", "full_name",
-  "contact_email", "contact_phone", "contact_website",
-  // legacy sender variables, still filled for older templates
-  "candidateName", "name", "candidateEmail", "email", "phone",
-  "role", "targetRole", "experience", "skills", "linkedin", "LinkedIn", "github",
-  "GitHub", "portfolio", "Portfolio",
-] as const;
+export const RESERVED_PROFILE_KEYS = BUILTIN_TEMPLATE_VARS;
 
 /** Custom "My Profile" fields — the full list is replaced on save. */
 export const profileFieldsSchema = z.object({

@@ -19,6 +19,7 @@ function makeDeps(overrides?: {
   language?: string;
   aiInstructions?: string | null;
   profileVars?: Record<string, string>;
+  customFields?: Record<string, unknown>;
 }): { deps: SendEmailDeps; logs: LogInput[]; send: ReturnType<typeof vi.fn>; campaign: any } {
   const logs: LogInput[] = [];
   const send = vi.fn(overrides?.sendImpl ?? (async () => ({ messageId: "mid-1" })));
@@ -29,6 +30,7 @@ function makeDeps(overrides?: {
       companyName: "Acme",
       location: "Berlin",
       email: "hr@acme.com",
+      customFields: overrides?.customFields ?? {},
       status: "PENDING",
       retryCount: overrides?.retryCount ?? 0,
     })),
@@ -344,5 +346,32 @@ describe("sendEmailJob", () => {
     });
     await sendEmailJob(1, deps);
     expect(send.mock.calls[0][0].subject).toBe("20% off for Acme");
+  });
+
+  it("a filled spreadsheet column beats a My Profile field of the same name; a blank one doesn't", async () => {
+    const filled = makeDeps({
+      template: { id: 7, subject: "{{offer}} / {{industry}}", body: "Hi" },
+      profileVars: { offer: "20% off" },
+      customFields: { offer: "VIP deal", industry: "Fintech" },
+    });
+    await sendEmailJob(1, filled.deps);
+    expect(filled.send.mock.calls[0][0].subject).toBe("VIP deal / Fintech");
+
+    const blank = makeDeps({
+      template: { id: 7, subject: "{{offer}} / {{industry}}", body: "Hi" },
+      profileVars: { offer: "20% off" },
+      customFields: { offer: "  ", industry: "" },
+    });
+    await sendEmailJob(1, blank.deps);
+    expect(blank.send.mock.calls[0][0].subject).toBe("20% off / ");
+  });
+
+  it("spreadsheet columns never override built-in variables", async () => {
+    const { deps, send } = makeDeps({
+      template: { id: 7, subject: "{{company}} {{my_name}}", body: "Hi" },
+      customFields: { company: "WRONG", my_name: "WRONG" },
+    });
+    await sendEmailJob(1, deps);
+    expect(send.mock.calls[0][0].subject).toBe("Acme Nikhil");
   });
 });

@@ -148,6 +148,16 @@ describe("parseContactsXlsx", () => {
     expect(rows[0].customFields).toEqual({ email_status: "verified" });
   });
 
+  it("renames extra columns that would clash with a built-in template variable", async () => {
+    const file = await xlsx([
+      ["Email", "LinkedIn", "Signature", "Contact Email"],
+      ["a@x.io", "linkedin.com/in/a", "Cheers", "b@x.io"],
+    ]);
+    const { rows, customFieldKeys } = await parse(file);
+    expect(customFieldKeys).toEqual(["contact_linkedin", "contact_signature", "contact_contact_email"]);
+    expect(rows[0].customFields).toMatchObject({ contact_linkedin: "linkedin.com/in/a", contact_signature: "Cheers" });
+  });
+
   it("splits a full name column into first and last name", async () => {
     const file = await xlsx([
       ["Name", "Email"],

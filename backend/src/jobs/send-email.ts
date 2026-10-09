@@ -7,7 +7,7 @@ import type { EmailProvider } from "../integrations/email/provider.js";
 import type { AiModelConfig } from "../integrations/ai/model-factory.js";
 import type { SenderProfile } from "../modules/settings/settings.schema.js";
 import { buildSenderVars } from "./sender-vars.js";
-import { buildContactVars } from "./contact-vars.js";
+import { buildContactCustomVars, buildContactVars } from "./contact-vars.js";
 
 // ---------------------------------------------------------------------------
 // Dependency ports (injected — keeps the job unit-testable without a DB)
@@ -184,10 +184,16 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
   const profile = await deps.settings.getSenderProfile();
   const signature = deps.settings.buildSignature(profile);
 
-  // Custom profile fields go first so the built-in variables always win.
   const customVars = (await deps.settings.getProfileVars?.()) ?? {};
+  // Order, lowest first: the contact's extra columns (blank cells render as ""), My Profile
+  // custom fields, then a filled-in column of the same name, since it's specific to this
+  // contact. Built-in contact and sender variables always win.
+  const contactCustom = buildContactCustomVars(contact);
+  const filledContactCustom = Object.fromEntries(Object.entries(contactCustom).filter(([, v]) => v.trim() !== ""));
   const flatVars: Record<string, string> = {
+    ...contactCustom,
     ...customVars,
+    ...filledContactCustom,
     ...buildContactVars(contact),
     ...buildSenderVars(profile, signature),
   };
