@@ -4,7 +4,11 @@ import { logger } from "../utils/logger.js";
 
 export function registerErrorHandler(app: FastifyInstance) {
   app.setErrorHandler((err, _req, reply) => {
-    if (err instanceof ZodError) return reply.code(400).send({ error: "ValidationError", details: err.flatten() });
+    if (err instanceof ZodError) {
+      // `message` carries the first issue so forms can show it as-is; `details` has them all.
+      const message = err.issues[0]?.message ?? "Invalid request";
+      return reply.code(400).send({ error: "ValidationError", message, details: err.flatten() });
+    }
     const status = (err as FastifyError).statusCode ?? 500;
     if (status >= 500) {
       logger.error({ err }, "unhandled error");

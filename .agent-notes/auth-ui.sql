@@ -1,0 +1,15 @@
+-- auth-ui agent: NO migration is required for this branch.
+--
+-- No drizzle schema files were changed. "Remember me" is carried as a `rememberMe`
+-- claim inside the refresh JWT, and users.refresh_token still holds a single bcrypt
+-- hash (now bcrypt(sha256(token)); old bcrypt(token) hashes are still accepted).
+--
+-- Emails are now trimmed + lower-cased on register/login, and auth.repo.findByEmail
+-- matches lower(email), so existing mixed-case rows keep working without a data fix.
+--
+-- OPTIONAL follow-up (manager's call, not needed for correctness). Only run it after
+-- checking that no two accounts differ by case alone, otherwise the UPDATE/INDEX fails:
+--
+--   -- SELECT lower(email), count(*) FROM users GROUP BY 1 HAVING count(*) > 1;
+--   -- UPDATE users SET email = lower(email) WHERE email <> lower(email);
+--   -- CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_idx ON users (lower(email));

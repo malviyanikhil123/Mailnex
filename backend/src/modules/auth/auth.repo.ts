@@ -1,10 +1,11 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { users } from "../../db/schema/index.js";
 
 export type UserRow = typeof users.$inferSelect;
 
 export interface AuthRepo {
+  /** Case-insensitive, so accounts saved before emails were lower-cased still match. */
   findByEmail(email: string): Promise<UserRow | null>;
   findById(id: number): Promise<UserRow | null>;
   setRefreshToken(id: number, hash: string | null): Promise<void>;
@@ -13,7 +14,12 @@ export interface AuthRepo {
 
 export const authRepo: AuthRepo = {
   async findByEmail(email: string) {
-    const rows = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    const rows = await db
+      .select()
+      .from(users)
+      .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
+      .orderBy(sql`${users.email} = ${email} desc`, users.id)
+      .limit(1);
     return rows[0] ?? null;
   },
 

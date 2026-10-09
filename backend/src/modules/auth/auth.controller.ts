@@ -19,7 +19,7 @@ export async function authController(app: FastifyInstance) {
   // POST /auth/login
   app.post("/login", async (req: FastifyRequest, reply: FastifyReply) => {
     const body = loginSchema.parse(req.body);
-    const result = await service.login(body.email, body.password);
+    const result = await service.login(body.email, body.password, body.rememberMe);
     return reply.code(200).send(result);
   });
 
