@@ -11,7 +11,6 @@ const schema = z.object({
   ENCRYPTION_KEY: z.string().length(32, "ENCRYPTION_KEY must be 32 chars").default("0123456789abcdef0123456789abcdef"),
   GMAIL_EMAIL: z.string().optional().default(""),
   GMAIL_APP_PASSWORD: z.string().optional().default(""),
-  GEMINI_API_KEY: z.string().optional().default(""),
   PORT: z.coerce.number().default(4000),
   UPLOAD_DIR: z.string().default("./uploads"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),

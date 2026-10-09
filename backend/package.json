@@ -23,7 +23,6 @@
     "@fastify/jwt": "^8.0.1",
     "@fastify/multipart": "^8.3.0",
     "@fastify/rate-limit": "^9.1.0",
-    "@google/generative-ai": "^0.17.1",
     "ai": "^7.0.137",
     "bcryptjs": "^2.4.3",
     "dotenv": "^17.4.2",
