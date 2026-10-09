@@ -20,10 +20,18 @@ export type ContactStatus =
 
 export interface Contact {
   id: number;
-  companyName: string;
-  location: string | null;
   email: string;
+  firstName: string | null;
+  lastName: string | null;
+  companyName: string | null;
+  phone: string | null;
+  website: string | null;
+  location: string | null;
+  /** Legacy single-name field of older contacts; imports fill first/last name. */
   contactPerson: string | null;
+  /** Extra spreadsheet columns, usable in templates as {{key}}. */
+  customFields: Record<string, string>;
+  importId: number | null;
   status: ContactStatus;
   retryCount: number;
   nextRetryAt: string | null;
@@ -49,6 +57,8 @@ export interface ImportSummary {
   skippedRows: number;
   duplicateRows: number;
   invalidRows: number;
+  /** Keys of the extra columns stored on this import's contacts ({{key}} variables). */
+  customFieldKeys?: string[];
   createdAt: string;
   /** Contacts that currently belong to this import (listing endpoint only). */
   contactCount?: number;
