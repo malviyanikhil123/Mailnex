@@ -6,6 +6,8 @@ import { logger } from "../utils/logger.js";
 import { classifyFailure } from "../integrations/email/classify-failure.js";
 import type { EmailProvider } from "../integrations/email/provider.js";
 import type { CandidateProfile } from "../modules/settings/settings.schema.js";
+import { buildSenderVars } from "./sender-vars.js";
+import { buildContactVars } from "./contact-vars.js";
 
 // ---------------------------------------------------------------------------
 // Dependency ports (injected — keeps the job unit-testable without a DB)
@@ -171,36 +173,13 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
   // let Gemini personalize on top (with template fallback inside personalize()).
   const profile = await deps.settings.getCandidateProfile();
   const signature = deps.settings.buildSignature(profile);
-  const userRole = profile.role?.trim() || "the open role";
-  const userExperience = profile.experience?.trim() || "";
-  const userSkills = profile.skills
-    ? Array.isArray(profile.skills)
-      ? profile.skills.filter(Boolean).join(", ")
-      : profile.skills.trim()
-    : "";
 
   // Custom profile fields go first so the built-in variables always win.
   const customVars = (await deps.settings.getProfileVars?.()) ?? {};
   const flatVars: Record<string, string> = {
     ...customVars,
-    company: contact.companyName,
-    location: contact.location ?? "",
-    candidateName: profile.name ?? "",
-    name: profile.name ?? "",
-    candidateEmail: profile.email ?? "",
-    email: profile.email ?? "",
-    phone: profile.phone ?? "",
-    role: userRole,
-    targetRole: userRole,
-    experience: userExperience,
-    skills: userSkills,
-    linkedin: profile.linkedin ?? "",
-    LinkedIn: profile.linkedin ?? "",
-    github: profile.github ?? "",
-    GitHub: profile.github ?? "",
-    portfolio: profile.portfolio ?? "",
-    Portfolio: profile.portfolio ?? "",
-    signature,
+    ...buildContactVars(contact),
+    ...buildSenderVars(profile, signature),
   };
   const rendered = {
     subject: interpolate(template.subject, flatVars),
