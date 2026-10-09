@@ -1,6 +1,6 @@
 import { db } from "../../db/index.js";
 import { emailTemplates } from "../../db/schema/templates.js";
-import { resumes } from "../../db/schema/resumes.js";
+import { documents } from "../../db/schema/documents.js";
 import { emailLogs } from "../../db/schema/logs.js";
 import { campaignTemplates } from "../../db/schema/campaign.js";
 import { and, eq, ne, sql, desc, asc } from "drizzle-orm";
@@ -45,23 +45,23 @@ export class TemplatesRepo {
         category: emailTemplates.category,
         version: emailTemplates.version,
         active: emailTemplates.active,
-        resumeId: emailTemplates.resumeId,
+        documentId: emailTemplates.documentId,
         createdAt: emailTemplates.createdAt,
         updatedAt: emailTemplates.updatedAt,
-        resume: {
-          id: resumes.id,
-          name: resumes.name,
-          fileName: resumes.fileName,
+        document: {
+          id: documents.id,
+          name: documents.name,
+          fileName: documents.fileName,
         },
       })
       .from(emailTemplates)
-      .leftJoin(resumes, eq(emailTemplates.resumeId, resumes.id))
+      .leftJoin(documents, and(eq(emailTemplates.documentId, documents.id), eq(documents.userId, emailTemplates.userId)))
       .where(eq(emailTemplates.userId, userId))
       .orderBy(desc(emailTemplates.id));
 
     return rows.map((r) => ({
       ...r,
-      resume: r.resume?.id ? r.resume : null,
+      document: r.document?.id ? r.document : null,
     }));
   }
 
@@ -76,23 +76,23 @@ export class TemplatesRepo {
         category: emailTemplates.category,
         version: emailTemplates.version,
         active: emailTemplates.active,
-        resumeId: emailTemplates.resumeId,
+        documentId: emailTemplates.documentId,
         createdAt: emailTemplates.createdAt,
         updatedAt: emailTemplates.updatedAt,
-        resume: {
-          id: resumes.id,
-          name: resumes.name,
-          fileName: resumes.fileName,
+        document: {
+          id: documents.id,
+          name: documents.name,
+          fileName: documents.fileName,
         },
       })
       .from(emailTemplates)
-      .leftJoin(resumes, eq(emailTemplates.resumeId, resumes.id))
+      .leftJoin(documents, and(eq(emailTemplates.documentId, documents.id), eq(documents.userId, emailTemplates.userId)))
       .where(and(eq(emailTemplates.id, id), eq(emailTemplates.userId, userId)));
 
     if (!row) return null;
     return {
       ...row,
-      resume: row.resume?.id ? row.resume : null,
+      document: row.document?.id ? row.document : null,
     };
   }
 

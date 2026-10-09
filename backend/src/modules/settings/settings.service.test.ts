@@ -33,18 +33,6 @@ function makeFakeRepo(): ISettingsRepo & { app: Partial<AppSettings>; fields: Pr
       }));
       return state.fields;
     },
-    async listResumes(_userId: number) {
-      return [];
-    },
-    async getResume(_userId: number, _resumeId: number) {
-      return null;
-    },
-    async addResume(_userId: number, name: string, fileName: string, filePath: string) {
-      return { id: 1, userId: _userId, name, fileName, filePath, createdAt: new Date() };
-    },
-    async deleteResume(_userId: number, _resumeId: number) {
-      return null;
-    },
   };
 }
 
@@ -77,7 +65,7 @@ describe("SettingsService", () => {
     expect(await service.getGmailCreds(userId)).toBeNull();
   });
 
-  it("getPublic exposes booleans and candidate but NEVER decrypted secrets", async () => {
+  it("getPublic exposes booleans and the profile but NEVER decrypted secrets", async () => {
     await service.updateGmail(userId, { email: "me@gmail.com", appPassword: "secretpass" });
     await service.updateGemini(userId, { apiKey: "secretkey" });
     const pub = await service.getPublic(userId);
@@ -89,34 +77,56 @@ describe("SettingsService", () => {
     expect(serialized).not.toContain("secretkey");
     expect(pub.senderDailyLimit).toBe(100);
     expect(pub.profileFields).toEqual([]);
+    expect(pub.profile).toEqual({});
+    expect(pub).not.toHaveProperty("resumeFileName");
   });
 
-  it("updateCandidate merges with the existing profile", async () => {
-    await service.updateCandidate(userId, { name: "Nikhil", role: "Software Engineer" });
-    const merged = await service.updateCandidate(userId, { phone: "12345" });
-    expect(merged.name).toBe("Nikhil");
-    expect(merged.role).toBe("Software Engineer");
-    expect(merged.phone).toBe("12345");
+  it("updateProfile merges with the existing profile", async () => {
+    await service.updateProfile(userId, { name: "Priya Shah", company: "Acme Corp" });
+    const merged = await service.updateProfile(userId, { phone: "12345" });
+    expect(merged).toEqual({ name: "Priya Shah", company: "Acme Corp", phone: "12345" });
+    expect(await service.getSenderProfile(userId)).toEqual(merged);
   });
 
-  it("buildSignature includes name, role, phone, email and links", () => {
+  it("updateProfile keeps legacy job-seeker keys it does not edit", async () => {
+    repo.app.candidateProfile = JSON.stringify({ name: "Nikhil", role: "Backend Engineer", skills: ["Node.js"] });
+    const merged = await service.updateProfile(userId, { name: "Nikhil M", website: "https://n.dev" });
+    expect(merged).toMatchObject({ name: "Nikhil M", website: "https://n.dev", role: "Backend Engineer", skills: ["Node.js"] });
+  });
+
+  it("getSenderProfile offers a legacy portfolio as the website until one is saved", async () => {
+    repo.app.candidateProfile = JSON.stringify({ portfolio: "https://old.dev" });
+    expect((await service.getSenderProfile(userId)).website).toBe("https://old.dev");
+
+    await service.updateProfile(userId, { website: "" });
+    const profile = await service.getSenderProfile(userId);
+    expect(profile.website).toBe("");
+    expect(profile.portfolio).toBe("https://old.dev");
+  });
+
+  it("getSenderProfile returns an empty profile for corrupt or non-object JSON", async () => {
+    repo.app.candidateProfile = "{not json";
+    expect(await service.getSenderProfile(userId)).toEqual({});
+    repo.app.candidateProfile = "null";
+    expect(await service.getSenderProfile(userId)).toEqual({});
+  });
+
+  it("buildSignature uses the user's own signature when set", () => {
+    const sig = service.buildSignature({ name: "Priya", signature: "  Cheers,\nPriya\nAcme — acme.com  " });
+    expect(sig).toBe("Cheers,\nPriya\nAcme — acme.com");
+  });
+
+  it("buildSignature defaults to name, company, phone and website, skipping blanks", () => {
     const sig = service.buildSignature({
-      name: "Nikhil Malviya",
-      role: "Software Engineer",
-      phone: "999",
-      email: "n@example.com",
-      linkedin: "https://linkedin.com/in/x",
-      github: "https://github.com/x",
-      portfolio: "https://x.dev",
+      name: "Priya Shah",
+      company: "Acme Corp",
+      phone: " ",
+      website: "https://acme.com",
+      email: "p@acme.com",
+      signature: "   ",
     });
-    expect(sig).toContain("Regards,");
-    expect(sig).toContain("Nikhil Malviya");
-    expect(sig).toContain("Software Engineer");
-    expect(sig).toContain("Phone: 999");
-    expect(sig).toContain("Email: n@example.com");
-    expect(sig).toContain("LinkedIn: https://linkedin.com/in/x");
-    expect(sig).toContain("GitHub: https://github.com/x");
-    expect(sig).toContain("Portfolio: https://x.dev");
+    expect(sig).toBe("Best regards,\nPriya Shah\nAcme Corp\nhttps://acme.com");
+    expect(service.buildSignature({})).toBe("Best regards,");
   });
 
   it("updateSending stores the primary Gmail daily cap", async () => {

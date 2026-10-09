@@ -6,6 +6,7 @@ import { sendersService } from "../modules/senders/senders.service.js";
 import { templatesRepo } from "../modules/templates/templates.repo.js";
 import { logsRepo } from "../modules/logs/logs.repo.js";
 import { settingsService } from "../modules/settings/settings.service.js";
+import { documentsService } from "../modules/documents/documents.service.js";
 import { personalize } from "../integrations/gemini/client.js";
 import { getEmailProvider } from "../integrations/email/factory.js";
 import type { EmailProvider } from "../integrations/email/provider.js";
@@ -59,13 +60,9 @@ function buildSendDeps(campaign: Campaign, senderCampaignIds: number[]): SendEma
     },
     settings: {
       getGeminiKey: () => settingsService.getGeminiKey(userId),
-      getCandidateProfile: () => settingsService.getCandidateProfile(userId),
+      getSenderProfile: () => settingsService.getSenderProfile(userId),
       buildSignature: (p) => settingsService.buildSignature(p),
-      getResumeAttachment: (resumeId) => settingsService.getResumeAttachment(userId, resumeId),
-      getResumePath: async (resumeId) => {
-        const att = await settingsService.getResumeAttachment(userId, resumeId);
-        return att?.path ?? null;
-      },
+      getDocumentAttachment: (documentId) => documentsService.getAttachment(userId, documentId),
       getProfileVars: () => settingsService.getProfileVars(userId),
     },
     personalize,

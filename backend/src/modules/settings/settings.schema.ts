@@ -12,20 +12,29 @@ export const updateGeminiSchema = z.object({
 });
 export type UpdateGeminiInput = z.infer<typeof updateGeminiSchema>;
 
-/** Candidate profile — editable from the Settings UI. All fields optional so a
+/** The sender's "My Profile" — editable from the Settings UI. All fields optional so a
  *  partial form submission merges with the existing stored profile. */
-export const candidateProfileSchema = z.object({
-  name: z.string().optional(),
-  phone: z.string().optional(),
-  email: z.string().optional(),
-  role: z.string().optional(),
-  experience: z.string().optional(),
-  skills: z.union([z.string(), z.array(z.string())]).optional(),
-  linkedin: z.string().optional(),
-  github: z.string().optional(),
-  portfolio: z.string().optional(),
+export const senderProfileSchema = z.object({
+  name: z.string().max(200).optional(),
+  company: z.string().max(200).optional(),
+  email: z.string().max(200).optional(),
+  phone: z.string().max(100).optional(),
+  website: z.string().max(500).optional(),
+  linkedin: z.string().max(500).optional(),
+  /** Multi-line sign-off; when empty a default is built from name/company/phone/website. */
+  signature: z.string().max(2000).optional(),
 });
-export type CandidateProfile = z.infer<typeof candidateProfileSchema>;
+export type SenderProfileInput = z.infer<typeof senderProfileSchema>;
+
+/** Stored profile JSON. Profiles saved by the old job-seeker form also carry these keys;
+ *  they are no longer edited but still fill the legacy template variables. */
+export type SenderProfile = SenderProfileInput & {
+  role?: string;
+  experience?: string;
+  skills?: string | string[];
+  github?: string;
+  portfolio?: string;
+};
 
 /** Sending settings for the primary Gmail (per-campaign settings live on each campaign). */
 export const updateSendingSchema = z.object({
@@ -35,9 +44,15 @@ export type UpdateSendingInput = z.infer<typeof updateSendingSchema>;
 
 /** Template variables the send job already fills; custom fields must not shadow them. */
 export const RESERVED_PROFILE_KEYS = [
-  "company", "location", "candidateName", "name", "candidateEmail", "email", "phone",
+  // sender ("My Profile")
+  "my_name", "my_company", "my_email", "my_phone", "my_website", "my_linkedin", "signature",
+  // contact
+  "company", "location", "first_name", "last_name", "full_name",
+  "contact_email", "contact_phone", "contact_website",
+  // legacy sender variables, still filled for older templates
+  "candidateName", "name", "candidateEmail", "email", "phone",
   "role", "targetRole", "experience", "skills", "linkedin", "LinkedIn", "github",
-  "GitHub", "portfolio", "Portfolio", "signature",
+  "GitHub", "portfolio", "Portfolio",
 ] as const;
 
 /** Custom "My Profile" fields — the full list is replaced on save. */

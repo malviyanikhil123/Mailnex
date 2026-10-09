@@ -8,5 +8,5 @@ export * from "./senders.js";
 export * from "./quota.js";
 export * from "./settings.js";
 export * from "./users.js";
-export * from "./resumes.js";
+export * from "./documents.js";
 export * from "./inbox.js";

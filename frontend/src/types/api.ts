@@ -55,11 +55,26 @@ export interface ImportSummary {
   pendingCount?: number;
 }
 
-export interface Resume {
+/** A file a template can attach to its emails (Settings → Documents). */
+export interface UserDocument {
   id: number;
   name: string;
+  /** Original file name, also used as the attachment name. */
   fileName: string;
   createdAt: string;
+}
+
+/** Upload limits, enforced by the server and mirrored in the UI. */
+export interface DocumentLimits {
+  maxDocuments: number;
+  maxBytes: number;
+  /** Allowed extensions, lower-case without the dot. */
+  extensions: string[];
+}
+
+export interface DocumentList {
+  documents: UserDocument[];
+  limits: DocumentLimits;
 }
 
 export interface Template {
@@ -70,8 +85,8 @@ export interface Template {
   category: string;
   version: number;
   active: boolean;
-  resumeId?: number | null;
-  resume?: Resume | null;
+  documentId?: number | null;
+  document?: Pick<UserDocument, "id" | "name" | "fileName"> | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -164,16 +179,16 @@ export interface TrendPoint {
   failed: number;
 }
 
-export interface CandidateProfile {
+/** The sender's "My Profile"; templates use it as {{my_name}}, {{my_company}}, … {{signature}}. */
+export interface SenderProfile {
   name?: string;
-  phone?: string;
+  company?: string;
   email?: string;
-  role?: string;
-  experience?: string;
-  skills?: string[];
+  phone?: string;
+  website?: string;
   linkedin?: string;
-  github?: string;
-  portfolio?: string;
+  /** Multi-line; when empty the server builds one from name, company, phone and website. */
+  signature?: string;
 }
 
 export interface PublicSettings {
@@ -181,8 +196,7 @@ export interface PublicSettings {
   gmailEmail: string | null;
   gmailConfigured: boolean;
   geminiConfigured: boolean;
-  candidate: CandidateProfile;
-  resumeFileName: string | null;
+  profile: SenderProfile;
   /** Daily cap of the primary Gmail, shared by every campaign sending from it. */
   senderDailyLimit: number;
   profileFields: ProfileField[];
