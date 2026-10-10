@@ -275,6 +275,16 @@ describe("AuthService", { timeout: 30_000 }, () => {
 
       await expect(svc.refresh("not.a.valid.jwt")).rejects.toMatchObject({ statusCode: 401 });
     });
+
+    it("throws 401 once the session row has expired, even if the JWT has not", async () => {
+      const repo = makeRepo();
+      const { sid, token } = await seedSession(repo);
+      repo.sessions.get(sid)!.expiresAt = new Date(Date.now() - 1000);
+      const svc = new AuthService(repo, stubSignAccess);
+
+      await expect(svc.refresh(token)).rejects.toMatchObject({ statusCode: 401 });
+      expect(repo.rotateSession).not.toHaveBeenCalled();
+    });
   });
 
   describe("tokens from before sessions", () => {

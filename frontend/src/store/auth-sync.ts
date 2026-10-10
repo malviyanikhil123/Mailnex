@@ -7,7 +7,7 @@
  * is rejected) and sign out together.
  */
 import { create } from "zustand";
-import { AUTH_STORAGE_KEY, useAuth, type AuthSession } from "./auth";
+import { AUTH_STORAGE_KEY, authStorage, useAuth, type AuthSession } from "./auth";
 
 const CHANNEL_NAME = AUTH_STORAGE_KEY;
 export const SESSION_REQUEST_TIMEOUT_MS = 300;
@@ -98,8 +98,12 @@ function onMessage(data: unknown) {
   }
 }
 
-/** Asks the other open tabs for their session; null when none answers in time. */
-export function requestSession(timeoutMs = SESSION_REQUEST_TIMEOUT_MS): Promise<AuthSession | null> {
+/** Asks the other open tabs for their session; null when no answer that `accept` takes
+ *  arrives in time (answers it rejects are skipped, a later tab may still have a good one). */
+export function requestSession(
+  timeoutMs = SESSION_REQUEST_TIMEOUT_MS,
+  accept: (session: AuthSession) => boolean = () => true,
+): Promise<AuthSession | null> {
   if (!channel) return Promise.resolve(null);
   const requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   return new Promise((resolve) => {
@@ -108,6 +112,7 @@ export function requestSession(timeoutMs = SESSION_REQUEST_TIMEOUT_MS): Promise<
       resolve(null);
     }, timeoutMs);
     pending.set(requestId, (session) => {
+      if (!accept(session)) return;
       clearTimeout(timer);
       pending.delete(requestId);
       resolve(session);
@@ -119,18 +124,34 @@ export function requestSession(timeoutMs = SESSION_REQUEST_TIMEOUT_MS): Promise<
 /**
  * Called when a refresh with `staleRefreshToken` was rejected. Tabs share one session, so
  * another tab may have rotated it first; returns (and adopts) its newer tokens if so.
+ * Only ever a newer token of the user this tab is signed in as, so a request is never
+ * retried as somebody else.
  */
 export async function recoverSession(staleRefreshToken: string): Promise<AuthSession | null> {
-  const newer = (s: AuthSession | null) => (s && s.refreshToken !== staleRefreshToken ? s : null);
-  // A remembered session may have been rotated into localStorage by a tab that has closed.
-  if (useAuth.getState().rememberMe) await useAuth.persist.rehydrate();
-  const own = newer(currentSession());
-  if (own) return own;
   const userId = useAuth.getState().user?.id;
-  const peer = newer(await requestSession());
-  if (!peer || peer.user.id !== userId) return null;
-  applyRemote(() => useAuth.getState().setAuth(peer));
-  return peer;
+  if (userId === undefined) return null;
+  const usable = (s: AuthSession | null) =>
+    s && s.refreshToken !== staleRefreshToken && s.user.id === userId ? s : null;
+  const adopt = (s: AuthSession) => {
+    applyRemote(() => useAuth.getState().setAuth(s));
+    return s;
+  };
+
+  // A broadcast may already have replaced the rejected token here.
+  const own = usable(currentSession());
+  if (own) return own;
+  // A remembered session may have been rotated into localStorage by a tab that has closed.
+  // Read it without loading it, as it may belong to someone else by now.
+  if (useAuth.getState().rememberMe) {
+    const saved = (await authStorage.getItem(AUTH_STORAGE_KEY))?.state;
+    const stored = usable(isSession(saved) ? saved : null);
+    if (stored) return adopt(stored);
+  }
+  // Tabs that lost the same race still hold the rejected token; wait for a newer one.
+  const peer = await requestSession(SESSION_REQUEST_TIMEOUT_MS, (s) => usable(s) !== null);
+  if (peer) return adopt(peer);
+  // The tab that won may have announced its rotation (applied by onMessage) meanwhile.
+  return usable(currentSession());
 }
 
 /** Signs this tab out and tells the other tabs to do the same. */

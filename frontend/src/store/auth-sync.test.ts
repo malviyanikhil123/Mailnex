@@ -176,4 +176,44 @@ describe("recoverSession", () => {
 
     expect(await recoverSession("r1")).toBeNull();
   });
+
+  it("waits past a stale answer for the rotation of the tab that won the race", async () => {
+    useAuth.getState().setAuth(session);
+    startAuthSync();
+    openPeer(session); // another tab that lost the race too: answers with the rejected token
+    const winner = new BroadcastChannel(AUTH_STORAGE_KEY);
+    try {
+      const recovering = recoverSession("r1");
+      setTimeout(() => winner.postMessage({ type: "session", session: { ...session, accessToken: "a3", refreshToken: "r3" } }), 50);
+
+      expect((await recovering)?.refreshToken).toBe("r3");
+      expect(useAuth.getState().refreshToken).toBe("r3");
+    } finally {
+      winner.close();
+    }
+  });
+
+  const remembered = (state: AuthSession) => JSON.stringify({ state, version: 0 });
+
+  it("takes a newer remembered token that a closed tab saved to localStorage", async () => {
+    useAuth.getState().setAuth({ ...session, rememberMe: true });
+    startAuthSync();
+    localStorage.setItem(AUTH_STORAGE_KEY, remembered({ ...session, accessToken: "a2", refreshToken: "r2", rememberMe: true }));
+
+    expect((await recoverSession("r1"))?.refreshToken).toBe("r2");
+    expect(useAuth.getState()).toMatchObject({ refreshToken: "r2", user, rememberMe: true });
+  });
+
+  it("never switches this tab to another user's session saved in localStorage", async () => {
+    useAuth.getState().setAuth({ ...session, rememberMe: true });
+    startAuthSync();
+    // Someone else signed in with "remember me" in another tab and saved over the shared key.
+    localStorage.setItem(
+      AUTH_STORAGE_KEY,
+      remembered({ ...session, refreshToken: "theirs", user: { ...user, id: 2 }, rememberMe: true }),
+    );
+
+    expect(await recoverSession("r1")).toBeNull();
+    expect(useAuth.getState().user?.id).toBe(1);
+  });
 });
