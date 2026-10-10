@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { BUILTIN_TEMPLATE_VARS } from "../../config/constants.js";
-/** Gmail credential update — secret is write-only. */
+import { appPasswordSchema } from "../../utils/app-password.js";
+/** Gmail credential update — secret is write-only. Any domain is allowed (Google Workspace). */
 export const updateGmailSchema = z.object({
-  email: z.string().email(),
-  appPassword: z.string().min(1),
+  email: z.string().trim().toLowerCase().max(254).email("Enter a valid email address"),
+  appPassword: appPasswordSchema,
 });
 export type UpdateGmailInput = z.infer<typeof updateGmailSchema>;
 

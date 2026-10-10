@@ -1,5 +1,6 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { useAuth } from "../store/auth";
+import { recoverSession } from "../store/auth-sync";
 
 const baseURL =
   import.meta.env.VITE_API_URL ||
@@ -29,6 +30,9 @@ async function refreshAccessToken(): Promise<string | null> {
     setTokens(accessToken, newRefresh);
     return accessToken;
   } catch {
+    // Another tab sharing this session may have rotated the token first; use its tokens.
+    const recovered = await recoverSession(refreshToken);
+    if (recovered) return recovered.accessToken;
     clear();
     return null;
   }

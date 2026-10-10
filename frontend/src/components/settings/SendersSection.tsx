@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { settingsApi } from "../../services/settings.api";
 import { sendersApi } from "../../services/senders.api";
@@ -6,6 +7,54 @@ import { Button, Card, Input } from "../ui/primitives";
 import { toast } from "../../store/toast";
 import type { SenderAccount } from "../../types/api";
 import { errorMessage, Labeled, SectionHeader } from "./shared";
+import { AppPasswordField } from "./AppPasswordField";
+import { appPasswordError, emailAddressError } from "./appPassword";
+
+/** Inline form to rotate one sender's app password. */
+function ChangeAppPasswordForm({
+  email,
+  saving,
+  onSave,
+  onCancel,
+}: {
+  email: string;
+  saving: boolean;
+  onSave: (appPassword: string) => void;
+  onCancel: () => void;
+}) {
+  const [pw, setPw] = useState("");
+  const [touched, setTouched] = useState(false);
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    setTouched(true);
+    if (!appPasswordError(pw)) onSave(pw);
+  };
+  return (
+    <form
+      onSubmit={submit}
+      onKeyDown={(e) => e.key === "Escape" && onCancel()}
+      className="basis-full space-y-2 border-t border-[#BAE6FD]/70 pt-2 dark:border-gray-800"
+    >
+      <AppPasswordField
+        label={`New app password for ${email}`}
+        placeholder="New app password"
+        value={pw}
+        onChange={setPw}
+        onBlur={() => setTouched(true)}
+        error={touched ? appPasswordError(pw) : null}
+        autoFocus
+      />
+      <div className="flex gap-2">
+        <Button type="submit" className="text-xs" disabled={saving || !pw}>
+          {saving ? "Verifying with Gmail…" : "Save password"}
+        </Button>
+        <Button type="button" variant="secondary" className="text-xs" onClick={onCancel} disabled={saving}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
 
 /** Gmail accounts campaigns can send from. App passwords are write-only: verified
  *  against Gmail on save, stored encrypted, and never shown again. */
@@ -31,20 +80,40 @@ export function SendersSection({
   });
 
   const [form, setForm] = useState({ label: "", email: "", appPassword: "", dailyLimit: 50 });
+  // Inline errors show once a field is left or "Add sender" is pressed.
+  const [touched, setTouched] = useState({ email: false, appPassword: false });
+  const emailErr = touched.email ? emailAddressError(form.email) : null;
+  const pwErr = touched.appPassword ? appPasswordError(form.appPassword) : null;
   const add = useMutation({
-    mutationFn: () => sendersApi.create(form),
+    mutationFn: () => sendersApi.create({ ...form, email: form.email.trim() }),
     onSuccess: () => {
       toast.success("Sender added");
       setForm({ label: "", email: "", appPassword: "", dailyLimit: 50 });
+      setTouched({ email: false, appPassword: false });
       refresh();
     },
     onError: (err) => toast.error(errorMessage(err, "Could not add sender")),
   });
+  const submitAdd = () => {
+    setTouched({ email: true, appPassword: true });
+    if (emailAddressError(form.email) || appPasswordError(form.appPassword)) return;
+    add.mutate();
+  };
+  const [changingPasswordId, setChangingPasswordId] = useState<number | null>(null);
   const update = useMutation({
-    mutationFn: ({ id, patch }: { id: number; patch: Partial<SenderAccount> & { appPassword?: string } }) =>
-      sendersApi.update(id, patch),
+    mutationFn: ({ id, patch }: { id: number; patch: Partial<SenderAccount> }) => sendersApi.update(id, patch),
     onSuccess: () => { toast.success("Sender updated"); refresh(); },
     onError: (err) => toast.error(errorMessage(err, "Update failed")),
+  });
+  // Separate from `update` so activating another sender doesn't look like a Gmail check.
+  const changePassword = useMutation({
+    mutationFn: ({ id, appPassword }: { id: number; appPassword: string }) => sendersApi.update(id, { appPassword }),
+    onSuccess: (_data, { id }) => {
+      toast.success("App password updated");
+      setChangingPasswordId((current) => (current === id ? null : current));
+      refresh();
+    },
+    onError: (err) => toast.error(errorMessage(err, "Could not change the app password")),
   });
   const remove = useMutation({
     mutationFn: (id: number) => sendersApi.remove(id),
@@ -93,10 +162,8 @@ export function SendersSection({
               </button>
               <button
                 className="text-xs font-medium text-[#3B82F6] hover:underline"
-                onClick={() => {
-                  const appPassword = prompt(`New app password for ${s.email}`)?.trim();
-                  if (appPassword) update.mutate({ id: s.id, patch: { appPassword } });
-                }}
+                aria-expanded={changingPasswordId === s.id}
+                onClick={() => setChangingPasswordId(changingPasswordId === s.id ? null : s.id)}
               >
                 Change password
               </button>
@@ -108,31 +175,56 @@ export function SendersSection({
               >
                 Remove
               </button>
+              {changingPasswordId === s.id && (
+                <ChangeAppPasswordForm
+                  email={s.email}
+                  saving={changePassword.isPending && changePassword.variables?.id === s.id}
+                  onSave={(appPassword) => changePassword.mutate({ id: s.id, appPassword })}
+                  onCancel={() => setChangingPasswordId(null)}
+                />
+              )}
             </div>
           ))}
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Input placeholder="Label (e.g. Sales)" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} />
-        <Input placeholder="Gmail address" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+      <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
         <Input
-          type="password"
-          autoComplete="new-password"
-          placeholder="App password (write-only)"
+          aria-label="Label"
+          placeholder="Label (e.g. Sales)"
+          value={form.label}
+          onChange={(e) => setForm({ ...form, label: e.target.value })}
+        />
+        <div>
+          <Input
+            type="email"
+            aria-label="Gmail address"
+            placeholder="Gmail address"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            onBlur={() => setTouched((t) => ({ ...t, email: true }))}
+            aria-invalid={emailErr ? true : undefined}
+          />
+          {emailErr && <p className="mt-1 text-xs text-red-600">{emailErr}</p>}
+        </div>
+        <AppPasswordField
           value={form.appPassword}
-          onChange={(e) => setForm({ ...form, appPassword: e.target.value })}
+          onChange={(appPassword) => setForm({ ...form, appPassword })}
+          onBlur={() => setTouched((t) => ({ ...t, appPassword: true }))}
+          error={pwErr}
+          placeholder="App password (write-only)"
         />
         <Input
           type="number"
           min={1}
+          aria-label="Daily limit"
           placeholder="Daily limit"
           value={form.dailyLimit}
           onChange={(e) => setForm({ ...form, dailyLimit: +e.target.value })}
         />
       </div>
       <div className="mt-3">
-        <Button onClick={() => add.mutate()} disabled={add.isPending || !form.label || !form.email || !form.appPassword}>
+        <Button onClick={submitAdd} disabled={add.isPending || !form.label || !form.email || !form.appPassword}>
           {add.isPending ? "Verifying with Gmail…" : "+ Add sender"}
         </Button>
       </div>
