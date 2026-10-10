@@ -7,6 +7,8 @@ export const LIMITS = {
   DOCUMENTS_PER_USER: 10,
   DOCUMENT_MAX_BYTES: 5 * 1024 * 1024,
   DOCUMENT_EXTENSIONS: ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv", "txt", "png", "jpg", "jpeg"],
+  /** Largest template body (UTF-8 bytes), plain text or HTML. */
+  TEMPLATE_BODY_MAX_BYTES: 100 * 1024,
 } as const;
 
 /**

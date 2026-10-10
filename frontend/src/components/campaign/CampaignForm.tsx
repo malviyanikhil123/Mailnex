@@ -61,6 +61,8 @@ export function CampaignForm({
     ? chosenAi.models.includes(chosenAi.defaultModel) ? chosenAi.models : [...chosenAi.models, chosenAi.defaultModel]
     : [];
 
+  const selectedHtml = templates.data?.filter((t) => t.format === "html" && v.templateIds.includes(t.id)).length ?? 0;
+
   const toggleTemplate = (id: number) =>
     set("templateIds", v.templateIds.includes(id) ? v.templateIds.filter((t) => t !== id) : [...v.templateIds, id]);
 
@@ -122,7 +124,7 @@ export function CampaignForm({
             <label key={t.id} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-[#E0F2FE] dark:hover:bg-gray-800/40">
               <input type="checkbox" checked={v.templateIds.includes(t.id)} onChange={() => toggleTemplate(t.id)} />
               <span className="truncate">{t.name}</span>
-              <span className="ml-auto shrink-0 text-[11px] text-gray-500">{t.category}</span>
+              <span className="ml-auto shrink-0 text-[11px] text-gray-500">{t.category}{t.format === "html" ? " · HTML" : ""}</span>
             </label>
           ))}
         </div>
@@ -169,6 +171,12 @@ export function CampaignForm({
       </div>
       {!v.aiEnabled && v.language !== "English" && (
         <Hint>Without AI the template is sent as written — write it in {v.language || "the target language"}.</Hint>
+      )}
+      {v.aiEnabled && selectedHtml > 0 && (
+        <Hint>
+          AI personalization applies to plain-text templates; the {selectedHtml} HTML design{selectedHtml === 1 ? "" : "s"} selected
+          {selectedHtml === 1 ? " is" : " are"} sent as designed.
+        </Hint>
       )}
 
       {v.aiEnabled && (

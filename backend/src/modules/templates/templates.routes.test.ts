@@ -65,6 +65,48 @@ describe("templates routes (auth guard, no DB required)", () => {
     });
     expect(res.statusCode).toBe(401);
   });
+
+  it("POST /templates/starter returns 401 without token", async () => {
+    const res = await app.inject({ method: "POST", url: "/templates/starter" });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("POST /templates/generate-html returns 401 without token", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/templates/generate-html",
+      payload: { description: "A product launch email" },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("POST /templates/generate-html validates the input before calling any AI", async () => {
+    const token = app.jwt.sign({ sub: 9001, email: "v@test.com" });
+    const res = await app.inject({
+      method: "POST",
+      url: "/templates/generate-html",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { description: "short", brandColor: "red" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toBe("ValidationError");
+  });
+
+  it("POST /templates/generate-html is rate limited per user (10 per minute)", async () => {
+    const send = (sub: number) =>
+      app.inject({
+        method: "POST",
+        url: "/templates/generate-html",
+        headers: { authorization: `Bearer ${app.jwt.sign({ sub, email: "r@test.com" })}` },
+        // Invalid on purpose: the limit applies before validation, and no AI is reached.
+        payload: {},
+      });
+
+    for (let i = 0; i < 10; i++) expect((await send(4242)).statusCode).toBe(400);
+    expect((await send(4242)).statusCode).toBe(429);
+    // Another user has their own budget.
+    expect((await send(4243)).statusCode).toBe(400);
+  });
 });
 
 describe.skipIf(!dbEnabled)("templates routes CRUD integration (DB gated)", () => {
@@ -164,6 +206,25 @@ describe.skipIf(!dbEnabled)("templates routes CRUD integration (DB gated)", () =
       headers: { authorization: `Bearer ${token}` },
     });
     expect(getAfterDelete.statusCode).toBe(404);
+
+    await app.close();
+  });
+
+  it("POST /templates/starter adds the missing starter templates once", async () => {
+    const { buildApp } = await import("../../app.js");
+    const { db } = await import("../../db/index.js");
+    const { emailTemplates } = await import("../../db/schema/templates.js");
+    const { TEMPLATE_SEED } = await import("../../db/seed/templates.js");
+
+    const app = await buildApp();
+    await app.ready();
+    await db.delete(emailTemplates);
+    const headers = { authorization: `Bearer ${app.jwt.sign({ sub: 1, email: "test@test.com" })}` };
+
+    const first = await app.inject({ method: "POST", url: "/templates/starter", headers });
+    expect(JSON.parse(first.body)).toEqual({ added: TEMPLATE_SEED.length });
+    const second = await app.inject({ method: "POST", url: "/templates/starter", headers });
+    expect(JSON.parse(second.body)).toEqual({ added: 0 });
 
     await app.close();
   });

@@ -9,6 +9,8 @@ export interface OutgoingEmail {
   to: string;
   subject: string;
   html: string;
+  /** Plain-text alternative of `html` (multipart/alternative). */
+  text?: string;
   attachments?: { filename: string; path: string }[];
 }
 

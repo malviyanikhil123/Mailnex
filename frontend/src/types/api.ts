@@ -89,18 +89,49 @@ export interface DocumentList {
   limits: DocumentLimits;
 }
 
+/** "text": plain text, formatted into simple HTML when sent. "html": a sanitized HTML design. */
+export type TemplateFormat = "text" | "html";
+
 export interface Template {
   id: number;
   name: string;
   subject: string;
   body: string;
+  format: TemplateFormat;
   category: string;
   version: number;
+  /** Legacy "selected for sending" flag; campaigns choose their own templates, nothing reads it. */
   active: boolean;
   documentId?: number | null;
   document?: Pick<UserDocument, "id" | "name" | "fileName"> | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** A template filled with sample values (POST /templates/:id/preview). */
+export interface TemplatePreview {
+  subject: string;
+  body: string;
+  format: TemplateFormat;
+}
+
+/** "Generate with AI" request for an HTML design; nothing is saved. */
+export interface GenerateHtmlInput {
+  description: string;
+  tone?: string;
+  /** Hex color like #2563eb. */
+  brandColor?: string;
+  includeVariables?: boolean;
+  /** null = the user's default AI provider. */
+  provider?: AiProviderId | null;
+  model?: string | null;
+}
+
+export interface GeneratedHtml {
+  /** Sanitized HTML document. */
+  html: string;
+  /** Suggested subject line (the design's <title>), when the AI gave one. */
+  subject?: string;
 }
 
 export type CampaignMode = "DRAFT" | "TEST" | "LIVE";
