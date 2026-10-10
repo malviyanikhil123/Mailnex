@@ -1,12 +1,12 @@
 import { apiClient } from "./client";
-import type { Template } from "../types/api";
+import type { GeneratedHtml, GenerateHtmlInput, Template, TemplateFormat, TemplatePreview } from "../types/api";
 
 export interface TemplateInput {
   name: string;
   subject: string;
   body: string;
+  format?: TemplateFormat;
   category?: string;
-  active?: boolean;
   documentId?: number | null;
 }
 
@@ -18,7 +18,10 @@ export const templatesApi = {
     apiClient.put<Template>(`/templates/${id}`, input).then((r) => r.data),
   remove: (id: number) => apiClient.delete(`/templates/${id}`).then((r) => r.data),
   preview: (id: number, vars: Record<string, string>) =>
-    apiClient
-      .post<{ subject: string; body: string }>(`/templates/${id}/preview`, vars)
-      .then((r) => r.data),
+    apiClient.post<TemplatePreview>(`/templates/${id}/preview`, vars).then((r) => r.data),
+  /** Adds the starter templates the user doesn't have yet; safe to call again. */
+  addStarter: () => apiClient.post<{ added: number }>("/templates/starter").then((r) => r.data),
+  /** AI-designed HTML for the editor; not saved. */
+  generateHtml: (input: GenerateHtmlInput) =>
+    apiClient.post<GeneratedHtml>("/templates/generate-html", input).then((r) => r.data),
 };
