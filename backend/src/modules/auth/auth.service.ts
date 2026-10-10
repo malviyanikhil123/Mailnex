@@ -135,7 +135,12 @@ export class AuthService {
     if (!claims.sid) return this.convertLegacyToken(token, claims);
 
     const session = await this.repo.findSession(claims.sid);
-    if (!session || session.userId !== claims.sub || !sameHash(tokenHash(token), session.tokenHash)) {
+    if (
+      !session ||
+      session.userId !== claims.sub ||
+      session.expiresAt.getTime() <= Date.now() || // the row decides, not only the JWT's exp
+      !sameHash(tokenHash(token), session.tokenHash)
+    ) {
       throw invalidRefresh();
     }
     const u = await this.repo.findById(session.userId);
