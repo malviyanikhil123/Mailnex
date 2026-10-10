@@ -155,6 +155,12 @@ describe("sanitizeEmailHtml — email design survives", () => {
     expect(sanitizeEmailHtml("<p>Hello <b>there</b></p>")).toBe("<p>Hello <b>there</b></p>");
   });
 
+  it("keeps an inline style that uses a variable", () => {
+    expect(sanitizeEmailHtml('<p style="color:{{brand}};font-size:14px">x</p>')).toMatch(
+      /^<p style="color:\s?\{\{brand\}\};\s?font-size:\s?14px;?">x<\/p>$/,
+    );
+  });
+
   it("drops a plain http image but keeps http links", () => {
     expect(sanitizeEmailHtml('<img src="http://x.example/a.png" alt="a">')).toBe('<img alt="a" />');
     expect(sanitizeEmailHtml('<a href="http://x.example">x</a>')).toBe('<a href="http://x.example">x</a>');

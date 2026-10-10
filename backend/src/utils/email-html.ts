@@ -153,6 +153,10 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   allowedSchemesAppliedToAttributes: ["href", "src"],
   allowProtocolRelative: false,
   disallowedTagsMode: "discard",
+  // sanitizeInlineCss() below is the gate for style attributes. sanitize-html's own
+  // postcss pass filters nothing without allowedStyles, but drops the whole attribute
+  // when it can't parse it, e.g. style="color:{{brand}}".
+  parseStyleAttributes: false,
   nonTextTags: DROP_WITH_CONTENT,
   // <style> is allowed on purpose: its sheet is checked by sanitizeStyleSheet() below,
   // because sanitize-html passes style text through untouched.
