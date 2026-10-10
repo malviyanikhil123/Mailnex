@@ -181,7 +181,8 @@ export class AuthService {
   private async convertLegacyToken(token: string, claims: RefreshClaims) {
     const u = await this.repo.findById(claims.sub);
     if (!u?.refreshToken || !(await legacyTokenMatches(token, u.refreshToken))) throw invalidRefresh();
-    await this.repo.setRefreshToken(u.id, null);
+    // Two requests racing with the same legacy token must not both get a session.
+    if (!(await this.repo.takeRefreshToken(u.id, u.refreshToken))) throw invalidRefresh();
     // Tokens from before remember-me were always kept in localStorage, so they stay remembered.
     return this.startSession(u, claims.rememberMe ?? true, {});
   }

@@ -20,6 +20,7 @@ describe("AuthService (Multi-user Registration)", () => {
       listByEmail: vi.fn().mockResolvedValue([existingUser]),
       findById: vi.fn().mockResolvedValue(null),
       setRefreshToken: vi.fn(),
+      takeRefreshToken: vi.fn(),
       create: vi.fn(),
       findSession: vi.fn(),
       createSession: vi.fn(),

@@ -69,10 +69,20 @@ function makeRepo(users: UserRow[] = [makeUser()]) {
         .sort((a, b) => a.id - b.id)
         .slice(0, limit),
     ),
-    findById: vi.fn(async (id: number) => users.find((u) => u.id === id) ?? null),
+    // Copies, like rows read from a database.
+    findById: vi.fn(async (id: number) => {
+      const u = users.find((x) => x.id === id);
+      return u ? { ...u } : null;
+    }),
     setRefreshToken: vi.fn(async (id: number, hash: string | null) => {
       const u = users.find((x) => x.id === id);
       if (u) u.refreshToken = hash;
+    }),
+    takeRefreshToken: vi.fn(async (id: number, hash: string) => {
+      const u = users.find((x) => x.id === id);
+      if (!u || u.refreshToken !== hash) return false;
+      u.refreshToken = null;
+      return true;
     }),
     create: vi.fn(async (d: { name: string; email: string; passwordHash: string }) => {
       const u = makeUser({ ...d, id: users.length + 1 });
@@ -303,6 +313,17 @@ describe("AuthService", { timeout: 30_000 }, () => {
       expect(repo.sessions.get(claims.sid!)).toMatchObject({ userId: 1, rememberMe: true });
       expect(repo.users[0].refreshToken).toBeNull();
       await expect(svc.refresh(legacy)).rejects.toMatchObject({ statusCode: 401 });
+    });
+
+    it("turns a legacy token into only one session when two refreshes race", async () => {
+      const legacy = makeLegacyToken(1);
+      const repo = makeRepo([makeUser({ refreshToken: await bcrypt.hash(legacy, 4) })]);
+      const svc = new AuthService(repo, stubSignAccess);
+
+      const results = await Promise.allSettled([svc.refresh(legacy), svc.refresh(legacy)]);
+
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      expect(repo.sessions.size).toBe(1);
     });
 
     it("rejects one that does not match the stored hash", async () => {

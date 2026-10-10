@@ -18,7 +18,7 @@ apiClient.interceptors.request.use((config) => {
 
 let refreshing: Promise<string | null> | null = null;
 
-async function refreshAccessToken(): Promise<string | null> {
+export async function refreshAccessToken(): Promise<string | null> {
   const { refreshToken, setTokens, clear } = useAuth.getState();
   if (!refreshToken) return null;
   try {
@@ -27,6 +27,10 @@ async function refreshAccessToken(): Promise<string | null> {
       accessToken: string;
       refreshToken: string;
     };
+    // Signed out (here or in another tab) while this request was in flight: don't write
+    // tokens back over that. A token changed by another tab is newer, so use it instead.
+    const current = useAuth.getState();
+    if (current.refreshToken !== refreshToken) return current.refreshToken ? current.accessToken : null;
     setTokens(accessToken, newRefresh);
     return accessToken;
   } catch {

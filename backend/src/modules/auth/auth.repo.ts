@@ -16,6 +16,8 @@ export interface AuthRepo {
   findById(id: number): Promise<UserRow | null>;
   /** Legacy single refresh-token slot; only cleared now, once its token becomes a session. */
   setRefreshToken(id: number, hash: string | null): Promise<void>;
+  /** Clears the legacy slot only if it still holds `hash`; false when another request did it first. */
+  takeRefreshToken(id: number, hash: string): Promise<boolean>;
   create(data: { name: string; email: string; passwordHash: string }): Promise<UserRow>;
 
   findSession(id: string): Promise<AuthSessionRow | null>;
@@ -45,6 +47,15 @@ export const authRepo: AuthRepo = {
 
   async setRefreshToken(id: number, hash: string | null) {
     await db.update(users).set({ refreshToken: hash }).where(eq(users.id, id));
+  },
+
+  async takeRefreshToken(id: number, hash: string) {
+    const rows = await db
+      .update(users)
+      .set({ refreshToken: null })
+      .where(and(eq(users.id, id), eq(users.refreshToken, hash)))
+      .returning({ id: users.id });
+    return rows.length > 0;
   },
 
   async create(data: { name: string; email: string; passwordHash: string }) {
