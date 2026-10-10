@@ -167,6 +167,26 @@ describe("TemplateEditor", () => {
       expect(iframe().getAttribute("srcdoc")).toContain("Fresh Acme Co");
     });
 
+    it("ignores a design that arrives after the dialog was closed", async () => {
+      let resolve!: (v: { html: string; subject?: string }) => void;
+      templates.generateHtml.mockReturnValue(new Promise((r) => { resolve = r; }));
+      renderEditor(template({ format: "html", body: "<p>Mine</p>" }));
+      fireEvent.click(screen.getByRole("button", { name: /Generate with AI/ }));
+      fireEvent.change(await screen.findByLabelText("What should the email be about?"), {
+        target: { value: "A product launch announcement" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Generate design" }));
+      await waitFor(() => expect(templates.generateHtml).toHaveBeenCalled());
+
+      const dialogs = screen.getAllByRole("button", { name: "Close dialog" });
+      fireEvent.click(dialogs[dialogs.length - 1]);
+      expect(screen.queryByLabelText("What should the email be about?")).not.toBeInTheDocument();
+
+      resolve({ html: "<p>Late design</p>", subject: "Late" });
+      await new Promise((r) => setTimeout(r, 0));
+      expect((screen.getByLabelText("HTML code") as HTMLTextAreaElement).value).toBe("<p>Mine</p>");
+    });
+
     it("shows the server's message when generation fails", async () => {
       templates.generateHtml.mockRejectedValue({ response: { status: 429, data: { message: "OpenAI is rate limiting your key" } } });
       renderEditor(template({ format: "html", body: "<p>Hi</p>" }));

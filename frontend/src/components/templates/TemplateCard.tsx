@@ -59,7 +59,7 @@ export function TemplateCard({
         {t.subject}
       </div>
 
-      <p className="mt-2.5 mb-4 line-clamp-3text-xs leading-relaxed text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
+      <p className="mt-2.5 mb-4 line-clamp-3 text-xs leading-relaxed text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
         {excerpt}
       </p>
 

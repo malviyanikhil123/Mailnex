@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { aiApi } from "../../services/ai.api";
@@ -28,6 +28,16 @@ export function GenerateHtmlDialog({ onClose, onGenerated }: { onClose: () => vo
   const [includeVariables, setIncludeVariables] = useState(true);
   const [provider, setProvider] = useState<AiProviderId | "">("");
 
+  // useMutation's onSuccess still fires after the dialog is closed (backdrop / ✕ while
+  // the AI is working): a late design must not replace what is in the editor then.
+  const open = useRef(true);
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
+
   const colorInvalid = brandColor !== "" && !HEX_COLOR.test(brandColor);
   const descriptionLength = description.trim().length;
 
@@ -41,6 +51,7 @@ export function GenerateHtmlDialog({ onClose, onGenerated }: { onClose: () => vo
         provider: provider || null,
       }),
     onSuccess: (result) => {
+      if (!open.current) return;
       onGenerated(result);
       onClose();
     },
