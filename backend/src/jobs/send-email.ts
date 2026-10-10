@@ -1,6 +1,7 @@
 import { LIMITS } from "../config/constants.js";
 import { interpolate } from "../utils/interpolate.js";
 import { formatEmailHtml } from "../utils/format-email.js";
+import { htmlToText, renderHtmlTemplate } from "../utils/email-html.js";
 import { logger } from "../utils/logger.js";
 import { classifyFailure } from "../integrations/email/classify-failure.js";
 import type { EmailProvider } from "../integrations/email/provider.js";
@@ -52,8 +53,18 @@ export interface CampaignPort {
   incQuota(date: Date): Promise<unknown>;
 }
 
+export interface PickedTemplate {
+  id: number;
+  subject: string;
+  body: string;
+  /** "html" = a sanitized HTML design; anything else is plain text. */
+  format?: string | null;
+  documentId?: number | null;
+}
+
 export interface TemplatePort {
-  pickRandomActive(options?: { isFollowup?: boolean }): Promise<{ id: number; subject: string; body: string; documentId?: number | null } | undefined | null>;
+  /** The campaign's next template in rotation (see templatesRepo.pickForCampaign). */
+  pickRandomActive(options?: { isFollowup?: boolean }): Promise<PickedTemplate | undefined | null>;
 }
 
 export interface DocumentAttachment {
@@ -179,8 +190,9 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
     return { outcome: "skipped" };
   }
 
-  // Build the fully-rendered template (signature/name/company/location), then
-  // let the AI personalize on top (with template fallback inside personalize()).
+  // Build the fully-rendered template (signature/name/company/location), then — for
+  // plain-text templates — let the AI personalize on top (with template fallback inside
+  // personalize()). HTML designs are never rewritten by the AI.
   const profile = await deps.settings.getSenderProfile();
   const signature = deps.settings.buildSignature(profile);
 
@@ -197,31 +209,11 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
     ...buildContactVars(contact),
     ...buildSenderVars(profile, signature),
   };
-  const rendered = {
-    subject: interpolate(template.subject, flatVars),
-    body: interpolate(template.body, flatVars),
-  };
 
-  // AI enhancement is per campaign; with it off, or with no key saved for the chosen
-  // provider, the rendered template is sent as written.
-  const ai = settings?.aiEnabled === false
-    ? null
-    : await deps.settings.getAiConfig({ provider: settings?.aiProvider ?? null, model: settings?.aiModel ?? null });
-  const personalized = await deps.personalize({
-    template: rendered,
-    vars: {
-      company: contact.companyName ?? "",
-      location: contact.location ?? "",
-      candidate: { name: profile.name ?? "", email: profile.email },
-    },
-    ai: ai ?? undefined,
-    language: settings?.language,
-    instructions: settings?.aiInstructions ?? undefined,
-  });
-
-  const subject = personalized.subject;
-  const body = personalized.body;
-  const aiUsed = personalized.aiUsed;
+  const isHtml = template.format === "html";
+  const { subject, body, aiUsed } = isHtml
+    ? renderHtmlEmail(template, flatVars)
+    : await renderTextEmail(template, flatVars, { contact, profile, settings, deps });
 
   // DRAFT mode: generate + log only, do not send; leave contact PENDING.
   if (mode === "DRAFT") {
@@ -246,7 +238,11 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
 
   try {
     const provider = await deps.getProvider();
-    await provider.send({ to: recipient, subject, html: formatEmailHtml(body), attachments });
+    // HTML designs go out as written; plain text is formatted into simple HTML. Both
+    // carry a plain-text alternative.
+    const html = isHtml ? body : formatEmailHtml(body);
+    const text = isHtml ? htmlToText(body) : body;
+    await provider.send({ to: recipient, subject, html, text, attachments });
 
     await deps.logs.create({
       contactId,
@@ -341,4 +337,62 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
     });
     return { outcome: "retry" };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
+
+interface RenderedEmail {
+  subject: string;
+  body: string;
+  aiUsed: boolean;
+}
+
+/**
+ * HTML design: variable values are HTML-escaped and the result is sanitized again
+ * right before sending. AI personalization is skipped so the design stays intact.
+ * The subject is plain text.
+ */
+function renderHtmlEmail(template: PickedTemplate, vars: Record<string, string>): RenderedEmail {
+  return {
+    subject: interpolate(template.subject, vars),
+    body: renderHtmlTemplate(template.body, vars),
+    aiUsed: false,
+  };
+}
+
+/** Plain text: fill in the variables, then let the campaign's AI personalize on top. */
+async function renderTextEmail(
+  template: PickedTemplate,
+  vars: Record<string, string>,
+  ctx: {
+    contact: ContactRow;
+    profile: SenderProfile;
+    settings: Awaited<ReturnType<CampaignPort["getSettings"]>>;
+    deps: SendEmailDeps;
+  },
+): Promise<RenderedEmail> {
+  const { contact, profile, settings, deps } = ctx;
+  const rendered = {
+    subject: interpolate(template.subject, vars),
+    body: interpolate(template.body, vars),
+  };
+
+  // AI enhancement is per campaign; with it off, or with no key saved for the chosen
+  // provider, the rendered template is sent as written.
+  const ai = settings?.aiEnabled === false
+    ? null
+    : await deps.settings.getAiConfig({ provider: settings?.aiProvider ?? null, model: settings?.aiModel ?? null });
+  return deps.personalize({
+    template: rendered,
+    vars: {
+      company: contact.companyName ?? "",
+      location: contact.location ?? "",
+      candidate: { name: profile.name ?? "", email: profile.email },
+    },
+    ai: ai ?? undefined,
+    language: settings?.language,
+    instructions: settings?.aiInstructions ?? undefined,
+  });
 }

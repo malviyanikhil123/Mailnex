@@ -366,6 +366,96 @@ describe("sendEmailJob", () => {
     expect(blank.send.mock.calls[0][0].subject).toBe("20% off / ");
   });
 
+  it("plain-text templates also send the text itself as the plain-text alternative", async () => {
+    const { deps, send } = makeDeps({ template: { id: 7, subject: "Hi", body: "Hello {{company}}" } });
+    await sendEmailJob(1, deps);
+    expect(send.mock.calls[0][0].text).toBe("Hello Acme");
+    expect(send.mock.calls[0][0].html).toContain("Hello Acme");
+  });
+
+  it("falls back to the {{var|fallback}} text when the contact has no first name", async () => {
+    const { deps, send } = makeDeps({ template: { id: 7, subject: "Hi {{first_name|there}}", body: "Hi {{first_name|there}}," } });
+    await sendEmailJob(1, deps);
+    expect(send.mock.calls[0][0].subject).toBe("Hi there");
+  });
+
+  describe("HTML templates", () => {
+    const htmlTemplate = {
+      id: 11,
+      format: "html",
+      subject: "News for {{company}} & {{first_name|friends}}",
+      body:
+        '<html><head><title>x</title></head><body><table><tr><td style="color:#111">' +
+        "<p>Hi {{first_name|there}} at {{company}}</p>" +
+        '<p><a href="{{contact_website}}">Your site</a> · <a href="{{my_website}}">Book a call</a></p>' +
+        "<p>{{signature}}</p></td></tr></table></body></html>",
+      documentId: null,
+    };
+
+    function htmlDeps(over: Parameters<typeof makeDeps>[0] = {}) {
+      const made = makeDeps({ template: htmlTemplate, ...over });
+      made.campaign.getContact.mockResolvedValue({
+        id: 1,
+        companyName: `<b>Acme</b> & "Sons"`,
+        location: "Berlin",
+        email: "hr@acme.com",
+        firstName: "<script>alert(1)</script>",
+        website: "javascript:alert(1)",
+        customFields: {},
+        status: "PENDING",
+        retryCount: 0,
+      });
+      made.deps.settings.getSenderProfile = vi.fn(async () => ({ name: "Nikhil", email: "n@x.dev", website: "https://nikhil.dev/?a=1&b=2" }));
+      return made;
+    }
+
+    it("escapes contact values, re-sanitizes URLs and keeps the design (no formatting wrapper)", async () => {
+      const { deps, send } = htmlDeps();
+      const res = await sendEmailJob(1, deps);
+      expect(res.outcome).toBe("sent");
+      const { html, subject } = send.mock.calls[0][0];
+      expect(html.startsWith("<!DOCTYPE html>\n<html>")).toBe(true);
+      expect(html).toContain("Hi &lt;script&gt;alert(1)&lt;/script&gt; at &lt;b&gt;Acme&lt;/b&gt; &amp; \"Sons\"");
+      expect(html).not.toContain("<script");
+      expect(html).not.toContain("<b>Acme");
+      expect(html).not.toMatch(/javascript:/i);
+      expect(html).toContain("<a>Your site</a>");
+      expect(html).toContain('<a href="https://nikhil.dev/?a=1&amp;b=2">Book a call</a>');
+      expect(html).toContain("Regards,<br />Nikhil");
+      expect(html).toMatch(/<td style="color:\s?#111;?">/);
+      // The subject stays plain text: no HTML escaping.
+      expect(subject).toBe(`News for <b>Acme</b> & "Sons" & <script>alert(1)</script>`);
+    });
+
+    it("sends a plain-text alternative generated from the HTML", async () => {
+      const { deps, send } = htmlDeps();
+      await sendEmailJob(1, deps);
+      const { text } = send.mock.calls[0][0];
+      expect(text).toContain("Hi <script>alert(1)</script> at <b>Acme</b> & \"Sons\"");
+      expect(text).toContain("Book a call (https://nikhil.dev/?a=1&b=2)");
+      expect(text).toContain("Regards,\nNikhil");
+      expect(text).not.toMatch(/<p>|<table|<td/);
+    });
+
+    it("skips AI personalization even when the campaign has AI on, and logs aiUsed: false", async () => {
+      const ai: AiModelConfig = { provider: "openai", apiKey: "key", model: "gpt-5.4-mini" };
+      const { deps, logs } = htmlDeps({ aiConfig: ai, aiEnabled: true });
+      await sendEmailJob(1, deps);
+      expect(deps.personalize).not.toHaveBeenCalled();
+      expect(deps.settings.getAiConfig).not.toHaveBeenCalled();
+      expect(logs[0]).toMatchObject({ status: "SENT", aiUsed: false, templateId: 11 });
+    });
+
+    it("DRAFT mode logs the rendered, sanitized HTML", async () => {
+      const { deps, logs, send } = htmlDeps({ mode: "DRAFT" });
+      await sendEmailJob(1, deps);
+      expect(send).not.toHaveBeenCalled();
+      expect(logs[0].status).toBe("GENERATED");
+      expect(logs[0].body).toContain("Hi &lt;script&gt;");
+      expect(logs[0].body).not.toContain("<script");
+    });
+  });
+
   it("spreadsheet columns never override built-in variables", async () => {
     const { deps, send } = makeDeps({
       template: { id: 7, subject: "{{company}} {{my_name}}", body: "Hi" },
