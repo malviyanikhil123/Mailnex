@@ -111,27 +111,52 @@ describe("login limits behind a proxy (no DB required)", () => {
   });
 });
 
-describe("windowLimiter", () => {
-  it("resets after the window and drops the oldest key past maxKeys", async () => {
-    const { windowLimiter } = await import("./rate-limit.js");
+describe("failureLimiter", () => {
+  async function setup() {
+    const { failureLimiter } = await import("./rate-limit.js");
     let t = 0;
-    const hook = windowLimiter({
+    const limiter = failureLimiter({
       max: 2, windowMs: 1000, maxKeys: 2, message: "slow down",
       key: (req) => (req.body as { k: string }).k,
       now: () => t,
     });
-    const reply = { header: () => reply } as never;
-    const hit = (k: string) => (hook as (req: unknown, reply: unknown) => Promise<void>)({ body: { k } }, reply);
+    type Hook = (req: unknown, reply: unknown) => Promise<void>;
+    const check = (k: string) => (limiter.preHandler as unknown as Hook)({ body: { k } }, { header: () => undefined });
+    const answer = (k: string, statusCode: number) =>
+      (limiter.onResponse as unknown as Hook)({ body: { k } }, { statusCode });
+    const fail = async (k: string) => {
+      await check(k);
+      await answer(k, 401);
+    };
+    return { check, answer, fail, setTime: (v: number) => { t = v; } };
+  }
 
-    await hit("a");
-    await hit("a");
-    await expect(hit("a")).rejects.toMatchObject({ statusCode: 429, message: "slow down" });
-    t = 1000;
-    await expect(hit("a")).resolves.toBeUndefined();
-    // "a" is the oldest once "b" and "c" arrive, so it starts over.
-    await hit("a");
-    await hit("b");
-    await hit("c");
-    await expect(hit("a")).resolves.toBeUndefined();
+  it("blocks after max failures until the window ends", async () => {
+    const { check, fail, setTime } = await setup();
+    await fail("a");
+    await fail("a");
+    await expect(check("a")).rejects.toMatchObject({ statusCode: 429, message: "slow down" });
+    setTime(1000);
+    await expect(check("a")).resolves.toBeUndefined();
+  });
+
+  it("does not count successes or its own 429s, and a success clears the failures", async () => {
+    const { check, answer, fail } = await setup();
+    await fail("a");
+    await answer("a", 200);
+    await fail("a");
+    await answer("a", 429);
+    await expect(check("a")).resolves.toBeUndefined();
+    await fail("a");
+    await expect(check("a")).rejects.toMatchObject({ statusCode: 429 });
+  });
+
+  it("drops the oldest key past maxKeys", async () => {
+    const { check, fail } = await setup();
+    await fail("a");
+    await fail("a");
+    await fail("b");
+    await fail("c");
+    await expect(check("a")).resolves.toBeUndefined();
   });
 });

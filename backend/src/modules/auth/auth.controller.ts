@@ -20,10 +20,12 @@ export async function authController(app: FastifyInstance) {
   });
 
   // POST /auth/login
-  // Two buckets: per client and email (fast), and per email from anywhere (slow), so
-  // spreading guesses over many addresses doesn't help.
+  // Two buckets: per client and email (fast), and failed logins per email from anywhere
+  // (slow), so spreading guesses over many addresses doesn't help.
+  const emailLimiter = loginEmailLimiter();
   app.post("/login", {
-    preHandler: loginEmailLimiter(),
+    preHandler: emailLimiter.preHandler,
+    onResponse: emailLimiter.onResponse,
     config: { rateLimit: authRateLimit("auth-login") },
   }, async (req: FastifyRequest, reply: FastifyReply) => {
     const body = loginSchema.parse(req.body);

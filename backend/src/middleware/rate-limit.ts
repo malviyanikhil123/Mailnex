@@ -1,21 +1,21 @@
 /**
  * Per-route limits for @fastify/rate-limit, on top of the global 100/min per client
  * set in app.ts. Pass one as `config: { rateLimit: … }` in a route's options, or as a
- * windowLimiter hook when a route needs a second bucket.
+ * failureLimiter pair of hooks when a route needs a second bucket.
  *
  * All of them run in the preHandler hook: the body is parsed by then (so the auth
  * limits can key on the email), and a route's own authGuard has already run (so the
  * per-user limits key on the user id rather than the IP).
  */
 import { isIPv6 } from "node:net";
-import type { FastifyRequest, preHandlerAsyncHookHandler } from "fastify";
+import type { FastifyRequest, onResponseAsyncHookHandler, preHandlerAsyncHookHandler } from "fastify";
 
 /** Brute-force guard for login and register, per client and email. */
 export const AUTH_RATE_LIMIT = { max: 10, timeWindow: "1 minute" } as const;
 
 /**
- * Login attempts per email from anywhere: rotating client addresses (an IPv6 /64
- * holds 2^64 of them) cannot get past this one.
+ * Failed logins per email from anywhere: rotating client addresses (an IPv6 /64
+ * holds 2^64 of them) cannot get past this one. A successful login clears it.
  */
 export const LOGIN_EMAIL_RATE_LIMIT = { max: 20, windowMs: 60 * 60 * 1000 } as const;
 
@@ -79,46 +79,71 @@ export function authRateLimit(scope: string) {
 }
 
 /**
- * A fixed-window counter as a preHandler hook. @fastify/rate-limit runs only one of its
- * limiters per request (a shared "already ran" flag), so a route that needs a second
- * bucket uses this one. Keys are held in memory, at most `maxKeys` (oldest dropped).
+ * Counts failed requests per key in a fixed window, in memory (at most `maxKeys`, oldest
+ * dropped). @fastify/rate-limit runs only one of its limiters per request (a shared
+ * "already ran" flag), so a route that needs a second bucket uses this one: `preHandler`
+ * rejects once a key has `max` failures, `onResponse` counts 4xx/5xx answers (not its own
+ * 429s) and clears the key on success, so the real owner logging in starts over.
  */
-export function windowLimiter(opts: {
+export function failureLimiter(opts: {
   max: number;
   windowMs: number;
   key: (req: FastifyRequest) => string | null;
   message: string;
   maxKeys?: number;
   now?: () => number;
-}): preHandlerAsyncHookHandler {
+}): { preHandler: preHandlerAsyncHookHandler; onResponse: onResponseAsyncHookHandler } {
   const { max, windowMs, key, message, maxKeys = 100_000, now = Date.now } = opts;
   const windows = new Map<string, { count: number; resetAt: number }>();
-  return async (req, reply) => {
-    const k = key(req);
-    if (k === null) return;
-    const t = now();
-    let w = windows.get(k);
-    if (!w || w.resetAt <= t) {
+
+  const live = (k: string, t: number) => {
+    const w = windows.get(k);
+    if (w && w.resetAt <= t) {
       windows.delete(k);
-      w = { count: 0, resetAt: t + windowMs };
-      windows.set(k, w);
-      if (windows.size > maxKeys) windows.delete(windows.keys().next().value!);
+      return undefined;
     }
-    w.count++;
-    if (w.count > max) {
-      reply.header("retry-after", Math.ceil((w.resetAt - t) / 1000));
-      throw Object.assign(new Error(message), { statusCode: 429, name: "TooManyRequests" });
-    }
+    return w;
+  };
+
+  return {
+    preHandler: async (req, reply) => {
+      const k = key(req);
+      if (k === null) return;
+      const t = now();
+      const w = live(k, t);
+      if (w && w.count >= max) {
+        reply.header("retry-after", Math.ceil((w.resetAt - t) / 1000));
+        throw Object.assign(new Error(message), { statusCode: 429, name: "TooManyRequests" });
+      }
+    },
+    onResponse: async (req, reply) => {
+      const k = key(req);
+      if (k === null) return;
+      const status = reply.statusCode;
+      if (status < 400) {
+        windows.delete(k);
+        return;
+      }
+      if (status === 429) return;
+      const t = now();
+      let w = live(k, t);
+      if (!w) {
+        w = { count: 0, resetAt: t + windowMs };
+        windows.set(k, w);
+        if (windows.size > maxKeys) windows.delete(windows.keys().next().value!);
+      }
+      w.count++;
+    },
   };
 }
 
-/** Login attempts per lower-cased email, whatever address they come from. */
-export function loginEmailLimiter(): preHandlerAsyncHookHandler {
-  return windowLimiter({
+/** Failed logins per lower-cased email, whatever address they come from. */
+export function loginEmailLimiter() {
+  return failureLimiter({
     max: LOGIN_EMAIL_RATE_LIMIT.max,
     windowMs: LOGIN_EMAIL_RATE_LIMIT.windowMs,
     key: (req) => bodyEmail(req) || null,
-    message: "Too many login attempts for this account. Try again later.",
+    message: "Too many failed logins for this account. Try again later.",
   });
 }
 
