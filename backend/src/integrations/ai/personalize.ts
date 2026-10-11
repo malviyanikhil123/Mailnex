@@ -27,6 +27,7 @@
  * In production it builds the real AI SDK provider model.
  */
 
+import { domainToASCII } from "node:url";
 import { z } from "zod";
 import { interpolate } from "../../utils/interpolate.js";
 import { logger } from "../../utils/logger.js";
@@ -95,28 +96,42 @@ const SCHEME_URL = /\b[a-z][a-z0-9+.-]*:\/\/([^\s"'<>/?#\\]+)/gi;
 
 /**
  * Bare domains, as mail clients turn them into links: dot-separated labels ending in a
- * letters-only TLD of 2+ characters, not glued to a longer word, and not the local part
- * of an email address ("first.last@…"). "e.g.", "i.e.", "3.5" and "v1.2" don't match.
+ * TLD of 2+ letters (any script, so IDNs like "пример.рф" count) or a punycode TLD,
+ * not glued to a longer word, and not the local part of an email address
+ * ("first.last@…"). "e.g.", "i.e.", "3.5" and "v1.2" don't match.
  */
-const BARE_DOMAIN = /(?<![\w.-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,24}))(?![\w@-])/gi;
+const BARE_DOMAIN =
+  /(?<![\p{L}\p{N}_.-])((?:[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?\.)+(\p{L}{2,24}|xn--[a-z0-9-]{1,59}))(?![\p{L}\p{N}_@-])/giu;
 
-/** "TLDs" that in prose are file names or code ("report.pdf", "Node.js"), not links. */
+/** Bare IPv4 addresses, with or without a path; not part of a longer dotted number. */
+const BARE_IPV4 = /(?<![\p{L}\p{N}_.])((?:\d{1,3}\.){3}\d{1,3})(?!\.?\d)(?![\p{L}_])/gu;
+
+/** "TLDs" that are never real ones and in prose are file names or code ("report.pdf"). */
 const NOT_TLDS = new Set([
   "txt", "pdf", "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "doc", "docx", "xls", "xlsx",
-  "csv", "ppt", "pptx", "html", "htm", "json", "xml", "css", "js", "jsx", "ts", "tsx", "py", "rb",
-  "md", "sh", "exe", "dll", "log", "yml", "yaml", "ini", "cfg", "java", "cpp",
+  "csv", "ppt", "pptx", "html", "htm", "json", "xml", "css", "js", "jsx", "ts", "tsx", "rb",
+  "exe", "dll", "log", "yml", "yaml", "ini", "cfg", "java", "cpp",
 ]);
 
+/**
+ * Real country TLDs that are also common file extensions (README.md, setup.py,
+ * build.sh). A bare "x.md" counts as a domain only when it reads like a link: a path
+ * or port follows, or it is an email domain. With a scheme it is always caught above.
+ */
+const EXTENSION_LIKE_TLDS = new Set(["md", "py", "sh"]);
+
 function normalizeHost(host: string): string {
-  return host
+  const h = host
     .replace(/^[^@]*@/, "") // user:pass@
     .replace(/:\d+$/, "") // :port
     .replace(/\.$/, "")
-    .replace(/^www\./, "")
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/^www\./, "");
+  // One spelling for an IDN, whether written in Unicode or punycode.
+  return domainToASCII(h) || h;
 }
 
-/** Every host a text names: URL hosts, bare domains and email domains, lower-cased. */
+/** Every host a text names: URL hosts, bare domains, IPv4 addresses and email domains. */
 export function hostsIn(text: string): Set<string> {
   const hosts = new Set<string>();
   for (const m of text.matchAll(SCHEME_URL)) {
@@ -124,8 +139,17 @@ export function hostsIn(text: string): Set<string> {
     if (host) hosts.add(host);
   }
   for (const m of text.matchAll(BARE_DOMAIN)) {
-    if (NOT_TLDS.has(m[2].toLowerCase())) continue;
+    const tld = m[2].toLowerCase();
+    if (NOT_TLDS.has(tld)) continue;
+    if (EXTENSION_LIKE_TLDS.has(tld)) {
+      const before = text[m.index! - 1];
+      const after = text[m.index! + m[0].length];
+      if (before !== "@" && after !== "/" && after !== ":") continue;
+    }
     hosts.add(normalizeHost(m[1]));
+  }
+  for (const m of text.matchAll(BARE_IPV4)) {
+    if (m[1].split(".").every((octet) => Number(octet) <= 255)) hosts.add(m[1]);
   }
   return hosts;
 }

@@ -293,6 +293,32 @@ describe("hostsIn()", () => {
   });
 });
 
+describe("hostsIn() edge cases", () => {
+  const hosts = (t: string) => [...hostsIn(t)];
+
+  it("catches .md, .py and .sh domains when they read like links, not file names", () => {
+    expect(hosts("evil.sh/login")).toEqual(["evil.sh"]);
+    expect(hosts("evil.py:8080")).toEqual(["evil.py"]);
+    expect(hosts("write to x@evil.md")).toEqual(["evil.md"]);
+    expect(hosts("https://evil.md")).toEqual(["evil.md"]);
+    expect(hosts("see README.md and setup.py, run build.sh")).toEqual([]);
+  });
+
+  it("catches bare IPv4 addresses, with or without a path", () => {
+    expect(hosts("go to 203.0.113.9/login now")).toEqual(["203.0.113.9"]);
+    expect(hosts("ip 10.0.0.1.")).toEqual(["10.0.0.1"]);
+    expect(hosts("v1.2.3.4.5, 999.1.1.1 and 3.14")).toEqual([]);
+  });
+
+  it("catches IDN domains and compares them in one spelling", () => {
+    expect(hosts("пример.рф/вход")).toEqual(["xn--e1afmkfd.xn--p1ai"]);
+    expect(hosts("xn--e1afmkfd.xn--p1ai")).toEqual(["xn--e1afmkfd.xn--p1ai"]);
+    // A Cyrillic "а" makes a different host than apple.com.
+    expect(hosts("аpple.com")).toEqual(["xn--pple-43d.com"]);
+    expect(unexpectedHosts({ subject: "", body: "аpple.com/login" }, ["https://apple.com"])).toEqual(["xn--pple-43d.com"]);
+  });
+});
+
 describe("unexpectedHosts()", () => {
   it("compares hosts case-insensitively, ignoring www., ports and trailing dots", () => {
     const trusted = ["Visit https://X.io/a"];
