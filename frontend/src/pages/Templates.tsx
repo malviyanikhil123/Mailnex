@@ -7,9 +7,8 @@ import { toast } from "../store/toast";
 import { TemplateCard } from "../components/templates/TemplateCard";
 import { TemplateEditor, categoryLabel } from "../components/templates/TemplateEditor";
 import { TemplatePreviewModal } from "../components/templates/TemplatePreviewModal";
-import { sampleVars } from "../components/templates/variables";
 import { errorMessage } from "../services/errors";
-import type { Template, TemplatePreview } from "../types/api";
+import type { Template } from "../types/api";
 
 /** Filter selects: full width in the 2-column mobile grid, natural width from sm up. */
 const filterSelectClass = `w-full sm:w-auto px-2.5 sm:px-3 py-2 text-xs sm:text-sm ${selectBaseClass}`;
@@ -27,7 +26,7 @@ export default function Templates() {
 
   // `undefined` = editor closed, `null` = new template.
   const [editing, setEditing] = useState<Template | null | undefined>(undefined);
-  const [preview, setPreview] = useState<TemplatePreview | null>(null);
+  const [previewing, setPreviewing] = useState<Template | null>(null);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [formatFilter, setFormatFilter] = useState<"all" | "text" | "html">("all");
@@ -49,14 +48,6 @@ export default function Templates() {
     },
     onError: (e) => toast.error(errorMessage(e, "Could not add the starter templates")),
   });
-
-  const doPreview = async (t: Template) => {
-    try {
-      setPreview(await templatesApi.preview(t.id, sampleVars(settings.data?.profile, profileFields)));
-    } catch (e) {
-      toast.error(errorMessage(e, "Preview failed"));
-    }
-  };
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -143,7 +134,7 @@ export default function Templates() {
           <TemplateCard
             key={t.id}
             template={t}
-            onPreview={() => doPreview(t)}
+            onPreview={() => setPreviewing(t)}
             onEdit={() => setEditing(t)}
             onDelete={() => confirm("Delete this template?") && del.mutate(t.id)}
           />
@@ -176,7 +167,14 @@ export default function Templates() {
         />
       )}
 
-      {preview && <TemplatePreviewModal preview={preview} onClose={() => setPreview(null)} />}
+      {previewing && (
+        <TemplatePreviewModal
+          template={previewing}
+          profile={settings.data?.profile}
+          profileFields={profileFields}
+          onClose={() => setPreviewing(null)}
+        />
+      )}
     </div>
   );
 }

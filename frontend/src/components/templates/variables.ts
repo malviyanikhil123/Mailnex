@@ -1,5 +1,5 @@
 import DOMPurify from "dompurify";
-import type { ProfileField, SenderProfile } from "../../types/api";
+import type { Contact, ProfileField, SenderProfile } from "../../types/api";
 
 export interface TemplateVariable {
   key: string;
@@ -49,11 +49,42 @@ function signatureOf(p: SenderProfile): string {
     .join("\n");
 }
 
+/** Mirrors the server's buildContactVars(): every built-in contact variable, "" when unknown. */
+export function contactVars(contact: Contact): Record<string, string> {
+  const firstName = contact.firstName?.trim() ?? "";
+  const lastName = contact.lastName?.trim() ?? "";
+  return {
+    company: contact.companyName ?? "",
+    location: contact.location ?? "",
+    first_name: firstName,
+    last_name: lastName,
+    full_name: [firstName, lastName].filter(Boolean).join(" "),
+    contact_email: contact.email,
+    contact_phone: contact.phone ?? "",
+    contact_website: contact.website ?? "",
+  };
+}
+
+/** Mirrors the server's buildContactCustomVars(): one variable per extra spreadsheet column. */
+export function contactCustomVars(contact: Contact): Record<string, string> {
+  const custom: Record<string, string> = {};
+  for (const [key, value] of Object.entries((contact.customFields ?? {}) as Record<string, unknown>)) {
+    if (value === null || value === undefined || typeof value === "object") continue;
+    custom[key] = String(value);
+  }
+  return custom;
+}
+
 /**
  * Values used by previews: the user's real profile (with placeholders where it is
- * empty), their custom fields, and a sample contact.
+ * empty), their custom fields, and a sample contact — or, given `contact`, that contact's
+ * values and spreadsheet columns, layered the way the server does when sending.
  */
-export function sampleVars(profile: SenderProfile = {}, fields: ProfileField[] = []): Record<string, string> {
+export function sampleVars(
+  profile: SenderProfile = {},
+  fields: ProfileField[] = [],
+  contact: Contact | null = null,
+): Record<string, string> {
   const p: SenderProfile = {
     name: profile.name?.trim() || "Alex Morgan",
     company: profile.company?.trim() || "Your Company",
@@ -63,9 +94,18 @@ export function sampleVars(profile: SenderProfile = {}, fields: ProfileField[] =
     linkedin: profile.linkedin?.trim() || "",
     signature: profile.signature,
   };
+  const profileFields = Object.fromEntries(fields.map((f) => [f.key, f.value]));
+  let contactValues: Record<string, string>;
+  if (contact) {
+    // Same order as the send job: a blank column doesn't hide the profile field of that name.
+    const custom = contactCustomVars(contact);
+    const filled = Object.fromEntries(Object.entries(custom).filter(([, v]) => v.trim() !== ""));
+    contactValues = { ...custom, ...profileFields, ...filled, ...contactVars(contact) };
+  } else {
+    contactValues = { ...profileFields, ...SAMPLE_CONTACT };
+  }
   return {
-    ...Object.fromEntries(fields.map((f) => [f.key, f.value])),
-    ...SAMPLE_CONTACT,
+    ...contactValues,
     my_name: p.name ?? "",
     my_company: p.company ?? "",
     my_email: p.email ?? "",
@@ -100,6 +140,28 @@ export function interpolate(tpl: string, vars: Record<string, string>, escape: (
     if (named !== undefined && named.trim() !== "") return escape(named);
     return key.slice(pipe + 1).trim();
   });
+}
+
+export interface TextPart {
+  text: string;
+  /** Set when this part is a {{placeholder}} that had no value (shown as a "no value" chip). */
+  missing?: string;
+}
+
+const PLACEHOLDER = /\{\{\s*([^}]+?)\s*\}\}/g;
+
+/** Splits filled-in text around the {{placeholders}} that were left without a value. */
+export function splitMissing(text: string): TextPart[] {
+  const parts: TextPart[] = [];
+  let last = 0;
+  for (const m of text.matchAll(PLACEHOLDER)) {
+    const at = m.index ?? 0;
+    if (at > last) parts.push({ text: text.slice(last, at) });
+    parts.push({ text: m[0], missing: m[1]!.trim() });
+    last = at + m[0].length;
+  }
+  if (last < text.length) parts.push({ text: text.slice(last) });
+  return parts;
 }
 
 /** Sanitized HTML document for the preview iframe (scripts never run there anyway). */

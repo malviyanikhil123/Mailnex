@@ -9,14 +9,22 @@ const WIDTHS: Record<Width, string> = { desktop: "100%", mobile: "375px" };
  * Renders email HTML in a fully sandboxed iframe: sandbox="" (no scripts, no same
  * origin, no forms or popups) on top of DOMPurify, with a desktop / mobile width toggle.
  */
-export function HtmlPreview({ html, className = "" }: { html: string; className?: string }) {
+export function HtmlPreview({
+  html,
+  className = "",
+  label = "Preview (sample values)",
+}: {
+  html: string;
+  className?: string;
+  label?: string;
+}) {
   const [width, setWidth] = useState<Width>("desktop");
   const srcDoc = useMemo(() => safePreviewHtml(html), [html]);
 
   return (
     <div className={`flex min-h-0 flex-col ${className}`}>
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Preview (sample values)</span>
+        <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{label}</span>
         <div role="group" aria-label="Preview width" className="inline-flex rounded-md border border-[#BAE6FD] text-[11px] dark:border-[#164549]">
           {(Object.keys(WIDTHS) as Width[]).map((w) => (
             <button

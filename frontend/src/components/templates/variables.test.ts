@@ -1,5 +1,25 @@
 import { describe, it, expect } from "vitest";
-import { interpolate, renderHtmlPreview, safePreviewHtml, sampleVars, textToHtml, looksLikeHtml, escapeHtml } from "./variables";
+import {
+  contactVars,
+  interpolate,
+  renderHtmlPreview,
+  safePreviewHtml,
+  sampleVars,
+  splitMissing,
+  textToHtml,
+  looksLikeHtml,
+  escapeHtml,
+} from "./variables";
+import type { Contact } from "../../types/api";
+
+function contact(over: Partial<Contact> = {}): Contact {
+  return {
+    id: 9, email: "maya@globex.example", firstName: " Maya ", lastName: null, companyName: "Globex", phone: null,
+    website: null, location: "Pune", contactPerson: null, customFields: { industry: "Fintech", offer: "" },
+    importId: 1, status: "PENDING", retryCount: 0, nextRetryAt: null, lastContactedAt: null, sentAt: null,
+    createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", ...over,
+  };
+}
 
 describe("interpolate (mirrors the server)", () => {
   it("fills known keys case-insensitively and leaves unknown ones", () => {
@@ -69,5 +89,48 @@ describe("helpers", () => {
 
   it("escapeHtml escapes quotes too", () => {
     expect(escapeHtml(`"a" & 'b'`)).toBe("&quot;a&quot; &amp; &#39;b&#39;");
+  });
+});
+
+describe("preview as a real contact (mirrors the send job)", () => {
+  it("builds the same built-in variable names as the server", () => {
+    expect(contactVars(contact())).toEqual({
+      company: "Globex", location: "Pune", first_name: "Maya", last_name: "", full_name: "Maya",
+      contact_email: "maya@globex.example", contact_phone: "", contact_website: "",
+    });
+  });
+
+  it("fills the contact's spreadsheet columns instead of the sample contact", () => {
+    const vars = sampleVars({ name: "Priya" }, [], contact());
+    expect(vars).toMatchObject({ first_name: "Maya", company: "Globex", industry: "Fintech", my_name: "Priya" });
+    expect(vars.first_name).not.toBe("Jordan");
+    expect(interpolate("{{first_name}} works in {{industry}}", vars)).toBe("Maya works in Fintech");
+  });
+
+  it("lets a filled column override a profile field, but not a blank one", () => {
+    const fields = [{ key: "offer", label: "Offer", value: "20% off" }, { key: "industry", label: "Industry", value: "Retail" }];
+    const vars = sampleVars({}, fields, contact());
+    expect(vars.offer).toBe("20% off");
+    expect(vars.industry).toBe("Fintech");
+  });
+
+  it("keeps built-in contact values over a column of the same name", () => {
+    expect(sampleVars({}, [], contact({ customFields: { company: "Other" } })).company).toBe("Globex");
+  });
+
+  it("leaves columns unfilled for the sample contact", () => {
+    expect(sampleVars({}, [])).not.toHaveProperty("industry");
+  });
+});
+
+describe("splitMissing", () => {
+  it("picks out the placeholders that got no value", () => {
+    expect(splitMissing("Hi Maya, {{ industry }} folks{{x}}")).toEqual([
+      { text: "Hi Maya, " },
+      { text: "{{ industry }}", missing: "industry" },
+      { text: " folks" },
+      { text: "{{x}}", missing: "x" },
+    ]);
+    expect(splitMissing("Nothing left")).toEqual([{ text: "Nothing left" }]);
   });
 });
