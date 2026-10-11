@@ -23,7 +23,7 @@ export function buildSenderVars(profile: SenderProfile, signature: string): Reco
  * whatever is stored.
  */
 function buildLegacySenderVars(profile: SenderProfile): Record<string, string> {
-  const role = profile.role?.trim() || "the open role";
+  const role = profile.role?.trim() ?? "";
   const skills = profile.skills
     ? Array.isArray(profile.skills)
       ? profile.skills.filter(Boolean).join(", ")

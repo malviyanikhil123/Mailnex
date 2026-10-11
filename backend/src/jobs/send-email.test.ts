@@ -58,7 +58,7 @@ function makeDeps(overrides?: {
   const deps: SendEmailDeps = {
     campaign,
     templates: {
-      pickRandomActive: vi.fn(async () =>
+      pickForCampaign: vi.fn(async () =>
         overrides?.template === undefined
           ? { id: 7, subject: "Hi {{company}}", body: "Dear {{company}} in {{location}}.\n{{signature}}", documentId: 3 }
           : overrides.template,

@@ -64,7 +64,7 @@ export interface PickedTemplate {
 
 export interface TemplatePort {
   /** The campaign's next template in rotation (see templatesRepo.pickForCampaign). */
-  pickRandomActive(options?: { isFollowup?: boolean }): Promise<PickedTemplate | undefined | null>;
+  pickForCampaign(options?: { isFollowup?: boolean }): Promise<PickedTemplate | undefined | null>;
 }
 
 export interface DocumentAttachment {
@@ -173,7 +173,7 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
 
   // Pick a template: first-time contacts never get follow-up templates
   const isFollowup = !!(contact.sentAt || contact.lastContactedAt);
-  const template = await deps.templates.pickRandomActive({ isFollowup });
+  const template = await deps.templates.pickForCampaign({ isFollowup });
   if (!template) {
     logger.warn({ contactId }, "send-email: no active template available");
     await deps.logs.create({

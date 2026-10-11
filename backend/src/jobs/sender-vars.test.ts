@@ -42,7 +42,8 @@ describe("buildSenderVars", () => {
       portfolio: "https://a.dev", Portfolio: "https://a.dev",
       role: "Backend Engineer", targetRole: "Backend Engineer", experience: "5 years", skills: "Node.js, SQL",
     });
-    expect(buildSenderVars({}, "").role).toBe("the open role");
+    expect(buildSenderVars({}, "").role).toBe("");
+    expect(buildSenderVars({ role: "  " }, "").targetRole).toBe("");
   });
 
   it("only produces variables that custom profile fields may not shadow", () => {

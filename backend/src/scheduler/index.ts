@@ -60,7 +60,7 @@ function buildSendDeps(campaign: Campaign, senderCampaignIds: number[]): SendEma
       incQuota: (d) => campaignRepo.incQuota(userId, d),
     },
     templates: {
-      pickRandomActive: (options) => templatesRepo.pickForCampaign(userId, campaign.id, options),
+      pickForCampaign: (options) => templatesRepo.pickForCampaign(userId, campaign.id, options),
     },
     settings: {
       getAiConfig: (choice) => aiProvidersService.resolve(userId, choice),
