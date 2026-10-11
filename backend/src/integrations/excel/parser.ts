@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { streamXlsxSheets, SheetTooLargeError } from "./xlsx-stream.js";
 import { logger } from "../../utils/logger.js";
 import { splitFullName } from "../../utils/person-name.js";
 import { BUILTIN_TEMPLATE_VARS } from "../../config/constants.js";
@@ -240,16 +241,18 @@ function mapCustomColumns(
   header: string[] | null,
   dataRows: string[][],
   fields: Partial<Record<Field, number>>,
+  /** Rows past the kept ones: how wide they get and which columns hold a value. */
+  extra: { width: number; filled: ReadonlySet<number> } = { width: 0, filled: new Set() },
 ): CustomColumn[] {
   const used = new Set(Object.values(fields));
-  const width = dataRows.reduce((max, r) => Math.max(max, r.length), header?.length ?? 0);
+  const width = dataRows.reduce((max, r) => Math.max(max, r.length), Math.max(header?.length ?? 0, extra.width));
   const custom: CustomColumn[] = [];
   const taken = new Set<string>();
 
   for (let idx = 0; idx < width && custom.length < IMPORT_LIMITS.MAX_CUSTOM_FIELDS; idx++) {
     if (used.has(idx)) continue;
     const title = header?.[idx] ?? "";
-    if (!title && !dataRows.some((r) => r[idx])) continue;
+    if (!title && !extra.filled.has(idx) && !dataRows.some((r) => r[idx])) continue;
 
     let base = customFieldKey(title) || `column_${idx + 1}`;
     // "LinkedIn" must not become {{linkedin}}, which the app fills from My Profile.
@@ -265,54 +268,18 @@ function mapCustomColumns(
   return custom;
 }
 
+type HeaderInfo = { headerRowIdx: number; fields: Partial<Record<Field, number>> };
+
 /**
- * Reads an xlsx or csv file using ExcelJS Workbook and maps every row onto contact fields.
- * Headers are matched case-, space- and underscore-insensitively (see HEADER_ALIASES) and
- * auto-detected on rows 1..10; a file without a recognizable header is read as data, with
- * the email found by scanning the cells. Columns that are no built-in field become
- * custom fields. Calls onRow for each non-empty data row (email lowercased, "" if none).
+ * The header is the first row naming an email column or two other known columns.
+ * Scanning stops at the first row holding an address: that row is already data. Only
+ * the first HEADER_SCAN_ROWS non-empty rows are looked at.
  */
-export async function parseContactsXlsx(
-  filePath: string,
-  onRow: (row: ParsedContact, index: number) => void,
-  options: { maxRows?: number } = {},
-): Promise<ParseResult> {
-  const maxRows = options.maxRows ?? IMPORT_LIMITS.MAX_ROWS;
-  const workbook = new ExcelJS.Workbook();
-  if (filePath.toLowerCase().endsWith(".csv")) {
-    // Keep CSV cells as text: the default mapping turns "+1 555…" or "0123" into numbers.
-    await workbook.csv.readFile(filePath, { map: (value: string) => (value === "" ? null : value) });
-  } else {
-    await workbook.xlsx.readFile(filePath);
-  }
-
-  // Select the worksheet with the most rows
-  let worksheet = workbook.worksheets[0];
-  for (const ws of workbook.worksheets) {
-    if (ws.rowCount > (worksheet?.rowCount ?? 0)) {
-      worksheet = ws;
-    }
-  }
-
-  const empty: ParseResult = { total: 0, skipped: 0, customFieldKeys: [] };
-  if (!worksheet) return empty;
-
-  // Extract all non-empty rows as string arrays
-  const allRawRows: string[][] = [];
-  worksheet.eachRow((row) => {
-    const rawValues = Array.isArray(row.values) ? row.values.slice(1) : [];
-    const cells = Array.from(rawValues, extractCellString);
-    if (cells.some(Boolean)) allRawRows.push(cells);
-  });
-
-  if (allRawRows.length === 0) return empty;
-
-  // The header is the first row naming an email column or two other known columns.
-  // Scanning stops at the first row holding an address: that row is already data.
+function detectHeader(rows: string[][]): HeaderInfo {
   let headerRowIdx = -1;
   let fields: Partial<Record<Field, number>> = {};
-  for (let r = 0; r < Math.min(allRawRows.length, HEADER_SCAN_ROWS); r++) {
-    const cells = allRawRows[r];
+  for (let r = 0; r < Math.min(rows.length, HEADER_SCAN_ROWS); r++) {
+    const cells = rows[r];
     if (cells.some((cell) => !!extractEmail(cell))) break;
     const found = mapHeaderFields(cells);
     if (found.email !== undefined || Object.keys(found).length >= 2) {
@@ -324,13 +291,138 @@ export async function parseContactsXlsx(
 
   // No recognizable header: a first row without an address is still taken as a header
   // (its other titles become custom field names); otherwise every row is data.
-  if (headerRowIdx === -1 && !allRawRows[0].some((cell) => !!extractEmail(cell))) {
+  if (headerRowIdx === -1 && rows.length > 0 && !rows[0].some((cell) => !!extractEmail(cell))) {
     headerRowIdx = 0;
-    fields = mapHeaderFields(allRawRows[0]);
+    fields = mapHeaderFields(rows[0]);
   }
+  return { headerRowIdx, fields };
+}
 
-  const header = headerRowIdx >= 0 ? allRawRows[headerRowIdx] : null;
-  const dataRows = allRawRows.slice(headerRowIdx + 1);
+/**
+ * One worksheet, read row by row. Only the first `keep` non-empty rows are held in
+ * memory (the header candidates plus maxRows data rows). Later rows are counted and
+ * summarised (how wide they are, which columns hold a value, where the first stray
+ * address is) so the result is the same as reading the whole sheet.
+ */
+class SheetScan {
+  /** Highest row number seen, like ExcelJS Worksheet.rowCount. */
+  rowCount = 0;
+  /** Non-empty rows, kept or not. */
+  total = 0;
+  readonly rows: string[][] = [];
+  /** Set once rows run past `keep`; the header always lies within the kept rows. */
+  header: HeaderInfo | null = null;
+  extraWidth = 0;
+  readonly extraFilled = new Set<number>();
+  /** Column of the first address in an unclaimed column among the rows past `keep`. */
+  extraEmailCol: number | undefined;
+
+  constructor(private readonly keep: number) {}
+
+  add(rowNumber: number, values: unknown): void {
+    if (rowNumber > this.rowCount) this.rowCount = rowNumber;
+    const rawValues = Array.isArray(values) ? values.slice(1) : [];
+    const cells = Array.from(rawValues, extractCellString);
+    if (!cells.some(Boolean)) return;
+    this.total++;
+    if (this.rows.length < this.keep) {
+      this.rows.push(cells);
+      return;
+    }
+
+    this.header ??= detectHeader(this.rows);
+    if (cells.length > this.extraWidth) this.extraWidth = cells.length;
+    cells.forEach((cell, i) => {
+      if (cell) this.extraFilled.add(i);
+    });
+    if (this.extraEmailCol === undefined && this.header.fields.email === undefined) {
+      const used = new Set(Object.values(this.header.fields));
+      const idx = cells.findIndex((cell, i) => !used.has(i) && !!extractEmail(cell));
+      if (idx !== -1) this.extraEmailCol = idx;
+    }
+  }
+}
+
+/**
+ * Rows read from one workbook at most (Excel's own limit per sheet). A zip bomb can
+ * hold far more; reading stops here, so the parse is bounded in time as well as memory.
+ */
+export const MAX_ROWS_READ = 1_048_576;
+
+/** CSV is not compressed and the upload is capped, so it is read in one go. */
+async function scanCsv(filePath: string, keep: number): Promise<SheetScan | null> {
+  const workbook = new ExcelJS.Workbook();
+  // Keep CSV cells as text: the default mapping turns "+1 555…" or "0123" into numbers.
+  const worksheet = await workbook.csv.readFile(filePath, { map: (value: string) => (value === "" ? null : value) });
+  if (!worksheet) return null;
+  const scan = new SheetScan(keep);
+  worksheet.eachRow((row, rowNumber) => scan.add(rowNumber, row.values));
+  return scan;
+}
+
+/**
+ * Streams an xlsx (see xlsx-stream.ts): the workbook is never inflated into memory as a
+ * whole, and only the kept rows of the current and the best sheet so far are held. As
+ * before, the sheet with the most rows wins (the first one on a tie).
+ */
+async function scanXlsx(filePath: string, keep: number, maxRowsRead: number): Promise<SheetScan | null> {
+  let best: SheetScan | null = null;
+  let budget = maxRowsRead;
+  for await (const sheet of streamXlsxSheets(filePath)) {
+    const scan = new SheetScan(keep);
+    let stop = false;
+    try {
+      for await (const row of sheet.rows) {
+        if (budget-- <= 0) {
+          stop = true;
+          logger.warn({ maxRowsRead }, "parseContactsXlsx: row budget reached; the rest of the workbook is not read");
+          break;
+        }
+        scan.add(row.number, row.values);
+      }
+    } catch (err) {
+      if (!(err instanceof SheetTooLargeError)) throw err;
+      stop = true;
+      logger.warn({ sheet: sheet.name }, "parseContactsXlsx: worksheet too large; the rest of the workbook is not read");
+    } finally {
+      sheet.close();
+    }
+    if (!best || scan.rowCount > best.rowCount) best = scan;
+    if (stop) break;
+  }
+  return best;
+}
+
+/**
+ * Reads an xlsx or csv file and maps every row onto contact fields. An xlsx is streamed
+ * (ExcelJS WorkbookReader) so a small upload that inflates to a huge workbook cannot
+ * exhaust memory: only the header candidates and the first maxRows data rows are kept.
+ * Headers are matched case-, space- and underscore-insensitively (see HEADER_ALIASES) and
+ * auto-detected on rows 1..10; a file without a recognizable header is read as data, with
+ * the email found by scanning the cells. Columns that are no built-in field become
+ * custom fields. Calls onRow for each non-empty data row (email lowercased, "" if none).
+ */
+export async function parseContactsXlsx(
+  filePath: string,
+  onRow: (row: ParsedContact, index: number) => void,
+  options: { maxRows?: number; maxRowsRead?: number } = {},
+): Promise<ParseResult> {
+  const maxRows = options.maxRows ?? IMPORT_LIMITS.MAX_ROWS;
+  const keep = HEADER_SCAN_ROWS + maxRows;
+  const scan = filePath.toLowerCase().endsWith(".csv")
+    ? await scanCsv(filePath, keep)
+    : await scanXlsx(filePath, keep, options.maxRowsRead ?? MAX_ROWS_READ);
+
+  const empty: ParseResult = { total: 0, skipped: 0, customFieldKeys: [] };
+  if (!scan || scan.rows.length === 0) return empty;
+
+  const detected = scan.header ?? detectHeader(scan.rows);
+  const headerRowIdx = detected.headerRowIdx;
+  const fields = { ...detected.fields };
+
+  const header = headerRowIdx >= 0 ? scan.rows[headerRowIdx] : null;
+  const dataRows = scan.rows.slice(headerRowIdx + 1);
+  const totalData = scan.total - (headerRowIdx + 1);
 
   // Without an email header, the email column is wherever the first address shows up.
   if (fields.email === undefined) {
@@ -343,10 +435,11 @@ export async function parseContactsXlsx(
         break;
       }
     }
+    if (fields.email === undefined && scan.extraEmailCol !== undefined) fields.email = scan.extraEmailCol;
   }
 
-  const custom = mapCustomColumns(header, dataRows, fields);
-  const rowsToRead = Math.min(dataRows.length, maxRows);
+  const custom = mapCustomColumns(header, dataRows, fields, { width: scan.extraWidth, filled: scan.extraFilled });
+  const rowsToRead = Math.min(totalData, maxRows);
 
   for (let r = 0; r < rowsToRead; r++) {
     const cells = dataRows[r];
@@ -386,8 +479,8 @@ export async function parseContactsXlsx(
   }
 
   return {
-    total: dataRows.length,
-    skipped: dataRows.length - rowsToRead,
+    total: totalData,
+    skipped: totalData - rowsToRead,
     customFieldKeys: custom.map((c) => c.key),
   };
 }

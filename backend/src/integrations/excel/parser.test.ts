@@ -365,3 +365,53 @@ describe("customFieldKey", () => {
     expect(customFieldKey("x".repeat(60))).toHaveLength(IMPORT_LIMITS.MAX_KEY_LENGTH);
   });
 });
+
+describe("parseContactsXlsx streaming", () => {
+  it("reads the worksheet with the most rows, the first one on a tie", async () => {
+    const file = path.join(os.tmpdir(), `${crypto.randomUUID()}.xlsx`);
+    tmpFiles.push(file);
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet("Notes").addRows([["email"], ["first@x.io"]]);
+    wb.addWorksheet("Contacts").addRows([["email"], ["a@x.io"], ["b@x.io"]]);
+    wb.addWorksheet("Other").addRows([["email"], ["c@x.io"], ["d@x.io"]]);
+    await wb.xlsx.writeFile(file);
+    const { rows } = await parse(file);
+    expect(rows.map((r) => r.email)).toEqual(["a@x.io", "b@x.io"]);
+  });
+
+  it("reads date cells as ISO dates", async () => {
+    const file = path.join(os.tmpdir(), `${crypto.randomUUID()}.xlsx`);
+    tmpFiles.push(file);
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("S");
+    ws.addRow(["email", "joined"]);
+    ws.addRow(["a@x.io", new Date(Date.UTC(2024, 0, 15))]);
+    await wb.xlsx.writeFile(file);
+    const { rows } = await parse(file);
+    expect(rows[0].customFields.joined).toBe("2024-01-15");
+  });
+
+  it("still sees columns and addresses that only appear in rows past maxRows", async () => {
+    const file = await xlsx([
+      ["name", "city"],
+      ...Array.from({ length: 15 }, (_, i) => [`Person ${i}`, "Pune"]),
+      ["Late", "Delhi", "late@x.io", "extra"],
+    ]);
+    const { rows, total, skipped, customFieldKeys } = await parse(file, { maxRows: 2 });
+    expect(total).toBe(16);
+    expect(skipped).toBe(14);
+    expect(rows).toHaveLength(2);
+    // The address column is found in the last row; the column after it is a custom field.
+    expect(customFieldKeys).toEqual(["column_4"]);
+    expect(rows[0]).toMatchObject({ email: "", location: "Pune", customFields: { column_4: "" } });
+  });
+
+  it("stops reading at the row budget and keeps what it has", async () => {
+    const file = await xlsx([["email"], ...Array.from({ length: 50 }, (_, i) => [`p${i}@x.io`])]);
+    const rows: ParsedContact[] = [];
+    const result = await parseContactsXlsx(file, (r) => rows.push(r), { maxRows: 5, maxRowsRead: 20 });
+    expect(rows).toHaveLength(5);
+    expect(result.total).toBe(19);
+    expect(result.skipped).toBe(14);
+  });
+});

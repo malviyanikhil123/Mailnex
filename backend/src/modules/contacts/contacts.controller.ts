@@ -14,6 +14,12 @@ import { logger } from "../../utils/logger.js";
 // .xls (the pre-2007 binary format) cannot be read by ExcelJS.
 const IMPORT_EXTENSIONS = [".xlsx", ".csv"];
 
+/**
+ * Users with an import being uploaded or processed. One at a time per user: each
+ * import holds its parsed rows in memory until they are inserted.
+ */
+export const activeImports = new Set<number>();
+
 function getUserId(req: FastifyRequest): number {
   return (req.user as { sub: number }).sub;
 }
@@ -35,17 +41,23 @@ export async function contactsController(app: FastifyInstance) {
         return reply.code(400).send({ error: "Upload an .xlsx or .csv file" });
       }
 
-      const uploadDir = path.resolve(env.UPLOAD_DIR, "tmp");
-      await fs.mkdir(uploadDir, { recursive: true });
+      if (activeImports.has(userId)) {
+        data.file.resume();
+        return reply.code(409).send({ error: "An import is already running. Wait for it to finish." });
+      }
+      activeImports.add(userId);
 
       const jobId = crypto.randomUUID();
-      const tmpPath = path.join(uploadDir, `${jobId}${ext}`);
-
+      let tmpPath = "";
       try {
+        const uploadDir = path.resolve(env.UPLOAD_DIR, "tmp");
+        await fs.mkdir(uploadDir, { recursive: true });
+        tmpPath = path.join(uploadDir, `${jobId}${ext}`);
         await pipeline(data.file, createWriteStream(tmpPath));
       } catch (err) {
+        activeImports.delete(userId);
         // e.g. the 20 MB upload limit: don't leave the partial file behind.
-        await fs.unlink(tmpPath).catch(() => {});
+        if (tmpPath) await fs.unlink(tmpPath).catch(() => {});
         throw err;
       }
 
@@ -53,10 +65,14 @@ export async function contactsController(app: FastifyInstance) {
       const rawName = (data.fields?.name as { value?: unknown } | undefined)?.value;
       const name = rawName ? String(rawName).slice(0, 120) : undefined;
 
-      // Fire-and-forget: do not await
-      contactsService.importFromFile(userId, tmpPath, fileName, jobId, name).catch((err: unknown) => {
-        logger.error({ err, jobId }, "Import failed");
-      });
+      // Fire-and-forget: do not await. importFromFile records a failure on the job itself
+      // (progress shows the error); the catch only keeps a rejection from going unhandled.
+      contactsService
+        .importFromFile(userId, tmpPath, fileName, jobId, name)
+        .catch((err: unknown) => {
+          logger.error({ err, jobId }, "Import failed");
+        })
+        .finally(() => activeImports.delete(userId));
 
       return reply.code(202).send({ jobId });
     },
