@@ -85,8 +85,12 @@ export interface SettingsPort {
 
 export interface PersonalizeFn {
   (input: {
+    /** The template as written, {{placeholders}} unfilled; `values` fill them. */
     template: { subject: string; body: string };
     vars: { company: string; location: string; firstName?: string; sender: { name: string; email?: string } };
+    values?: Record<string, string>;
+    /** The sender's own values: hosts named here may appear in the email. */
+    trustedText?: string[];
     ai?: AiModelConfig;
     language?: string;
     instructions?: string;
@@ -209,11 +213,13 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
     ...buildContactVars(contact),
     ...buildSenderVars(profile, signature),
   };
+  // The sender's own values: links and domains named here may appear in an AI-written email.
+  const trustedText = [...Object.values(customVars), ...Object.values(buildSenderVars(profile, signature))];
 
   const isHtml = template.format === "html";
   const { subject, body, aiUsed } = isHtml
     ? renderHtmlEmail(template, flatVars)
-    : await renderTextEmail(template, flatVars, { contact, profile, settings, deps });
+    : await renderTextEmail(template, flatVars, { contact, profile, settings, deps, trustedText });
 
   // DRAFT mode: generate + log only, do not send; leave contact PENDING.
   if (mode === "DRAFT") {
@@ -371,21 +377,22 @@ async function renderTextEmail(
     profile: SenderProfile;
     settings: Awaited<ReturnType<CampaignPort["getSettings"]>>;
     deps: SendEmailDeps;
+    trustedText: string[];
   },
 ): Promise<RenderedEmail> {
-  const { contact, profile, settings, deps } = ctx;
-  const rendered = {
-    subject: interpolate(template.subject, vars),
-    body: interpolate(template.body, vars),
-  };
+  const { contact, profile, settings, deps, trustedText } = ctx;
 
   // AI enhancement is per campaign; with it off, or with no key saved for the chosen
   // provider, the rendered template is sent as written.
   const ai = settings?.aiEnabled === false
     ? null
     : await deps.settings.getAiConfig({ provider: settings?.aiProvider ?? null, model: settings?.aiModel ?? null });
+  // The template goes to personalize() unfilled: the model sees {{placeholders}}, and the
+  // contact's values only in the prompt's fenced data block. personalize() fills them in.
   return deps.personalize({
-    template: rendered,
+    template: { subject: template.subject, body: template.body },
+    values: vars,
+    trustedText,
     vars: {
       company: contact.companyName ?? "",
       location: contact.location ?? "",

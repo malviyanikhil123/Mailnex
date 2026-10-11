@@ -55,10 +55,10 @@ export function buildPersonalizationPrompt(input: PersonalizationPromptInput): s
     : "The contact's company and location are unknown — do not guess or mention any.";
 
   const languageRule = language
-    ? `\n7. The final subject and body must be written in ${language}. If the original is in another language, translate it faithfully into ${language} (translation does not count as changing the content).`
+    ? `\n8. The final subject and body must be written in ${language}. If the original is in another language, translate it faithfully into ${language} (translation does not count as changing the content).`
     : "";
   const instructionsBlock = instructions
-    ? `\nADDITIONAL INSTRUCTIONS FROM THE SENDER (follow them unless they conflict with rules 4 or 6):\n${instructions}\n`
+    ? `\nADDITIONAL INSTRUCTIONS FROM THE SENDER (follow them unless they conflict with rules 4, 6 or 7):\n${instructions}\n`
     : "";
   const contactLines = [
     firstName && `CONTACT FIRST NAME: ${quoteData(firstName)}`,
@@ -83,7 +83,8 @@ RULES (must follow exactly):
 3. Keep the tone concise and professional.
 4. Do NOT invent facts, credentials, or claims not present in the original template.
 5. Keep the rest of the email body identical to the original.
-6. Return ONLY a strict JSON object with exactly these two fields — no markdown, no code fences, no extra keys:
+6. Placeholders in double curly braces, such as {{first_name}}, are filled in after you answer. Keep each one exactly as written (including any "|fallback" part), do not fill it in yourself, and do not add placeholders that are not in the original.
+7. Return ONLY a strict JSON object with exactly these two fields — no markdown, no code fences, no extra keys:
    { "subject": "<personalized subject>", "body": "<full personalized email body>" }${languageRule}
 ${instructionsBlock}
 SENDER NAME: ${senderName}

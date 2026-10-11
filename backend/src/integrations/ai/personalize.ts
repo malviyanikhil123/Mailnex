@@ -6,16 +6,19 @@
  *
  * Behavior:
  *  - If no AI config is given (AI off, or no key saved) → return the template
- *    interpolated with vars, aiUsed: false. The model is never called.
- *  - Otherwise → call the model with a constrained prompt. Parse the model's
- *    text output as JSON and validate with Zod. On success →
- *    { subject, body, aiUsed: true }.
+ *    filled in with its values, aiUsed: false. The model is never called.
+ *  - Otherwise → call the model with a constrained prompt. The template goes to the
+ *    model with its {{placeholders}} unfilled: the contact's own fields reach it only
+ *    inside the fenced CONTACT DATA block (see prompt.ts), and every placeholder is
+ *    filled in after the model answers. Parse the model's text output as JSON and
+ *    validate with Zod. On success → { subject, body, aiUsed: true }.
  *  - On ANY error (model throws, network error, timeout, invalid JSON, Zod
- *    validation failure, empty response) → fallback to the interpolated
- *    template, aiUsed: false. Never throws out of personalize().
- *  - The same fallback applies when the model's text holds a link that the
- *    template does not: contact fields reach the prompt, so a crafted company
- *    name must not be able to make the model plant a URL in the email.
+ *    validation failure, empty response) → fallback to the filled-in template,
+ *    aiUsed: false. Never throws out of personalize().
+ *  - The same fallback applies when the finished email names a host (a URL, a bare
+ *    domain such as evil.com/login, or an email domain) that neither the filled-in
+ *    template nor the sender's own profile has: contact fields reach the prompt,
+ *    so a crafted company name must not be able to make the model plant a link.
  *
  * JSON is asked for in the prompt rather than through a provider's structured
  * output mode, because not every model on every provider supports the latter.
@@ -52,8 +55,16 @@ export interface PersonalizeVars {
 }
 
 export interface PersonalizeInput {
+  /** The template as written, {{placeholders}} unfilled. */
   template: { subject: string; body: string };
   vars: PersonalizeVars;
+  /**
+   * Every placeholder value (contact, custom fields, profile, sender). Filled into the
+   * template for the fallback, and into the model's answer.
+   */
+  values?: Record<string, string>;
+  /** The sender's own values (profile, signature): hosts named here may appear in the email. */
+  trustedText?: string[];
   /** Provider, key and model to use; absent = send the template as written. */
   ai?: AiModelConfig;
   language?: string;
@@ -76,42 +87,71 @@ const personalizationSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Link check
+// Host check
 // ---------------------------------------------------------------------------
 
-/** http(s) and www. links, ended by whitespace, quotes or angle brackets. */
-const LINK = /(?:https?:\/\/|www\.)[^\s"'<>]+/gi;
+/** Hosts of scheme URLs, IP literals included ("https://1.2.3.4/x"). */
+const SCHEME_URL = /\b[a-z][a-z0-9+.-]*:\/\/([^\s"'<>/?#\\]+)/gi;
 
-/** The links in a text, lower-cased and without trailing sentence punctuation. */
-export function linksIn(text: string): string[] {
-  return (text.match(LINK) ?? []).map((l) => l.replace(/[.,;:!?)\]}*]+$/, "").toLowerCase());
+/**
+ * Bare domains, as mail clients turn them into links: dot-separated labels ending in a
+ * letters-only TLD of 2+ characters, not glued to a longer word, and not the local part
+ * of an email address ("first.last@…"). "e.g.", "i.e.", "3.5" and "v1.2" don't match.
+ */
+const BARE_DOMAIN = /(?<![\w.-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,24}))(?![\w@-])/gi;
+
+/** "TLDs" that in prose are file names or code ("report.pdf", "Node.js"), not links. */
+const NOT_TLDS = new Set([
+  "txt", "pdf", "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "doc", "docx", "xls", "xlsx",
+  "csv", "ppt", "pptx", "html", "htm", "json", "xml", "css", "js", "jsx", "ts", "tsx", "py", "rb",
+  "md", "sh", "exe", "dll", "log", "yml", "yaml", "ini", "cfg", "java", "cpp",
+]);
+
+function normalizeHost(host: string): string {
+  return host
+    .replace(/^[^@]*@/, "") // user:pass@
+    .replace(/:\d+$/, "") // :port
+    .replace(/\.$/, "")
+    .replace(/^www\./, "")
+    .toLowerCase();
 }
 
-/** Links in the model's output that the (already filled-in) template does not contain. */
-export function unexpectedLinks(
-  output: { subject: string; body: string },
-  template: { subject: string; body: string },
-): string[] {
-  const allowed = new Set(linksIn(`${template.subject}
-${template.body}`));
-  return linksIn(`${output.subject}
-${output.body}`).filter((l) => !allowed.has(l));
+/** Every host a text names: URL hosts, bare domains and email domains, lower-cased. */
+export function hostsIn(text: string): Set<string> {
+  const hosts = new Set<string>();
+  for (const m of text.matchAll(SCHEME_URL)) {
+    const host = normalizeHost(m[1]);
+    if (host) hosts.add(host);
+  }
+  for (const m of text.matchAll(BARE_DOMAIN)) {
+    if (NOT_TLDS.has(m[2].toLowerCase())) continue;
+    hosts.add(normalizeHost(m[1]));
+  }
+  return hosts;
+}
+
+/** Hosts in the output that none of the trusted texts name. */
+export function unexpectedHosts(output: { subject: string; body: string }, trusted: string[]): string[] {
+  const allowed = hostsIn(trusted.join("\n"));
+  return [...hostsIn(`${output.subject}\n${output.body}`)].filter((h) => !allowed.has(h));
 }
 
 // ---------------------------------------------------------------------------
 // Interpolation helper
 // ---------------------------------------------------------------------------
 
-function interpolateTemplate(
+function fill(
   template: { subject: string; body: string },
-  vars: PersonalizeVars,
+  input: Pick<PersonalizeInput, "vars" | "values">,
 ): { subject: string; body: string } {
+  const { vars, values } = input;
   const flat: Record<string, string> = {
     company: vars.company,
     location: vars.location,
     // Legacy variable names from the job-seeker templates.
     candidateName: vars.sender.name,
     ...(vars.sender.email ? { candidateEmail: vars.sender.email } : {}),
+    ...values,
   };
   return {
     subject: interpolate(template.subject, flat),
@@ -128,15 +168,14 @@ export async function personalize(
   modelFactory: ModelFactory = defaultModelFactory,
 ): Promise<PersonalizeResult> {
   const { template, vars, ai } = input;
+  const filled = fill(template, input);
+  const fallback = (): PersonalizeResult => ({ ...filled, aiUsed: false });
 
-  // No AI config → return interpolated template without calling the model
-  if (!ai?.apiKey) {
-    const { subject, body } = interpolateTemplate(template, vars);
-    return { subject, body, aiUsed: false };
-  }
+  // No AI config → return the filled-in template without calling the model
+  if (!ai?.apiKey) return fallback();
   const where = { provider: ai.provider, model: ai.model };
 
-  // Attempt AI personalization — any failure falls back to interpolated template
+  // Attempt AI personalization — any failure falls back to the filled-in template
   try {
     const promptText = buildPersonalizationPrompt({
       subject: template.subject,
@@ -160,8 +199,7 @@ export async function personalize(
         { reason: "empty_response", ...where },
         "AI returned empty response — falling back to interpolated template",
       );
-      const { subject, body } = interpolateTemplate(template, vars);
-      return { subject, body, aiUsed: false };
+      return fallback();
     }
 
     // Strip optional markdown code fences (```json ... ```) that the model
@@ -179,8 +217,7 @@ export async function personalize(
         { reason: "json_parse_error", ...where, raw: rawText.slice(0, 200) },
         "AI returned non-JSON text — falling back to interpolated template",
       );
-      const { subject, body } = interpolateTemplate(template, vars);
-      return { subject, body, aiUsed: false };
+      return fallback();
     }
 
     const validated = personalizationSchema.safeParse(parsed);
@@ -189,31 +226,27 @@ export async function personalize(
         { reason: "zod_validation_failed", ...where, errors: validated.error.issues },
         "AI JSON failed schema validation — falling back to interpolated template",
       );
-      const { subject, body } = interpolateTemplate(template, vars);
-      return { subject, body, aiUsed: false };
+      return fallback();
     }
 
-    const unexpected = unexpectedLinks(validated.data, interpolateTemplate(template, vars));
+    // Fill the placeholders the model kept, then check the finished email: a placeholder
+    // the model added on its own must not bring in a host either.
+    const result = fill(validated.data, input);
+    const unexpected = unexpectedHosts(result, [filled.subject, filled.body, ...(input.trustedText ?? [])]);
     if (unexpected.length > 0) {
       logger.warn(
-        { reason: "unexpected_link", ...where, links: unexpected.slice(0, 5) },
-        "AI output added a link the template does not have — falling back to interpolated template",
+        { reason: "unexpected_link", ...where, hosts: unexpected.slice(0, 5) },
+        "AI output names a link or domain the template does not have — falling back to interpolated template",
       );
-      const { subject, body } = interpolateTemplate(template, vars);
-      return { subject, body, aiUsed: false };
+      return fallback();
     }
 
-    return {
-      subject: validated.data.subject,
-      body: validated.data.body,
-      aiUsed: true,
-    };
+    return { ...result, aiUsed: true };
   } catch (err) {
     logger.warn(
       { reason: "model_error", ...where, err: describeAiError(err) },
       "AI personalization failed — falling back to interpolated template",
     );
-    const { subject, body } = interpolateTemplate(template, vars);
-    return { subject, body, aiUsed: false };
+    return fallback();
   }
 }

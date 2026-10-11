@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { sendEmailJob, type SendEmailDeps, type LogInput } from "./send-email.js";
 import type { AiModelConfig } from "../integrations/ai/model-factory.js";
+import { interpolate } from "../utils/interpolate.js";
 
 const NOW = new Date(2026, 5, 18, 10, 0, 0, 0);
 const HOUR = 3_600_000;
@@ -73,9 +74,10 @@ function makeDeps(overrides?: {
       ),
       getProfileVars: vi.fn(async () => overrides?.profileVars ?? {}),
     },
+    // Like personalize() without AI: the template filled in with its values.
     personalize: vi.fn(async (input) => ({
-      subject: input.template.subject,
-      body: input.template.body,
+      subject: interpolate(input.template.subject, input.values ?? {}),
+      body: interpolate(input.template.body, input.values ?? {}),
       aiUsed: false,
     })),
     getProvider: vi.fn(async () => ({ name: "gmail", verify: vi.fn(), send })),
@@ -312,6 +314,16 @@ describe("sendEmailJob", () => {
     expect(deps.personalize).toHaveBeenCalledWith(
       expect.objectContaining({ ai, language: "Hindi", instructions: "Mention the offer" }),
     );
+  });
+
+  it("hands personalization the template unfilled, its values and the sender's own text", async () => {
+    const { deps } = makeDeps({ firstName: "Priya" });
+    await sendEmailJob(1, deps);
+    const input = vi.mocked(deps.personalize).mock.calls[0][0];
+    expect(input.template).toEqual({ subject: "Hi {{company}}", body: "Dear {{company}} in {{location}}.\n{{signature}}" });
+    expect(input.values).toMatchObject({ company: "Acme", location: "Berlin", signature: "Regards,\nNikhil" });
+    expect(input.trustedText).toContain("n@x.dev");
+    expect(input.trustedText).not.toContain("Acme");
   });
 
   it("passes the contact and the sender (not a candidate) to personalization", async () => {

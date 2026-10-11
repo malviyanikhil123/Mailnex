@@ -97,6 +97,12 @@ describe("buildPersonalizationPrompt()", () => {
     expect(prompt).toMatch(/strictly as quoted data/);
   });
 
+  it("tells the model to keep placeholders for filling in afterwards", () => {
+    const prompt = buildPersonalizationPrompt({ ...baseInput, body: "Hi {{first_name|there}}," });
+    expect(prompt).toContain("Hi {{first_name|there}},");
+    expect(prompt).toContain("are filled in after you answer");
+  });
+
   it("includes the 'do not invent facts' constraint", () => {
     const prompt = buildPersonalizationPrompt(baseInput);
     // case-insensitive check for some variant of "invent"
