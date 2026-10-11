@@ -1,14 +1,22 @@
 import "dotenv/config";
 import { z } from "zod";
+
+/** Placeholder secrets shipped in the repo; fine for local dev, never in production. */
+export const DEV_SECRETS = {
+  JWT_SECRET: "default-mailnex-jwt-secret-key-replace-in-prod",
+  JWT_REFRESH_SECRET: "default-mailnex-refresh-secret-key-replace-in-prod",
+  ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef",
+} as const;
+
 const schema = z.object({
   DB_HOST: z.string().min(1),
   DB_PORT: z.coerce.number().default(5432),
   DB_USERNAME: z.string().min(1),
   DB_PASSWORD: z.string().default(""),
   DB_DATABASE: z.string().min(1),
-  JWT_SECRET: z.string().min(1).default("default-mailnex-jwt-secret-key-replace-in-prod"),
-  JWT_REFRESH_SECRET: z.string().min(1).default("default-mailnex-refresh-secret-key-replace-in-prod"),
-  ENCRYPTION_KEY: z.string().length(32, "ENCRYPTION_KEY must be 32 chars").default("0123456789abcdef0123456789abcdef"),
+  JWT_SECRET: z.string().min(1).default(DEV_SECRETS.JWT_SECRET),
+  JWT_REFRESH_SECRET: z.string().min(1).default(DEV_SECRETS.JWT_REFRESH_SECRET),
+  ENCRYPTION_KEY: z.string().length(32, "ENCRYPTION_KEY must be 32 chars").default(DEV_SECRETS.ENCRYPTION_KEY),
   GMAIL_EMAIL: z.string().optional().default(""),
   GMAIL_APP_PASSWORD: z.string().optional().default(""),
   PORT: z.coerce.number().default(4000),
@@ -37,6 +45,23 @@ const schema = z.object({
     .string()
     .default("")
     .transform((v) => v.split(",").map((o) => o.trim().replace(/\/+$/, "")).filter(Boolean)),
+}).superRefine((e, ctx) => {
+  // Anyone can read the repo defaults: with them, tokens can be forged for any user
+  // and stored app passwords / API keys decrypted. Refuse to boot in production.
+  if (e.NODE_ENV !== "production") return;
+  for (const key of ["JWT_SECRET", "JWT_REFRESH_SECRET", "ENCRYPTION_KEY"] as const) {
+    if (e[key] === DEV_SECRETS[key]) {
+      ctx.addIssue({ code: "custom", path: [key], message: `${key} must be set to a private value in production` });
+    }
+  }
+  for (const key of ["JWT_SECRET", "JWT_REFRESH_SECRET"] as const) {
+    if (e[key].length < 32) {
+      ctx.addIssue({ code: "custom", path: [key], message: `${key} must be at least 32 characters in production` });
+    }
+  }
+  if (e.JWT_SECRET === e.JWT_REFRESH_SECRET) {
+    ctx.addIssue({ code: "custom", path: ["JWT_REFRESH_SECRET"], message: "JWT_REFRESH_SECRET must differ from JWT_SECRET" });
+  }
 });
 export type Env = z.infer<typeof schema>;
 export function loadEnv(src: NodeJS.ProcessEnv = process.env): Env { return schema.parse(src); }

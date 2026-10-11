@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadEnv } from "./env";
+import { DEV_SECRETS, loadEnv } from "./env";
 
 const base = {
   DB_HOST: "localhost",
@@ -29,6 +29,44 @@ describe("loadEnv", () => {
     const { DB_HOST: _omit, ...rest } = base;
     void _omit;
     expect(() => loadEnv(rest)).toThrow();
+  });
+});
+
+describe("loadEnv in production", () => {
+  const prod = {
+    ...base,
+    NODE_ENV: "production",
+    JWT_SECRET: "j".repeat(40),
+    JWT_REFRESH_SECRET: "r".repeat(40),
+    ENCRYPTION_KEY: "k".repeat(32),
+  };
+
+  it("accepts private secrets", () => {
+    expect(loadEnv(prod).NODE_ENV).toBe("production");
+  });
+
+  it.each(["JWT_SECRET", "JWT_REFRESH_SECRET", "ENCRYPTION_KEY"] as const)("refuses the repo default %s", (key) => {
+    expect(() => loadEnv({ ...prod, [key]: DEV_SECRETS[key] })).toThrow(key);
+  });
+
+  it("refuses missing secrets, which fall back to the defaults", () => {
+    const { JWT_SECRET: _j, ENCRYPTION_KEY: _k, ...rest } = prod;
+    void _j;
+    void _k;
+    expect(() => loadEnv(rest)).toThrow(/JWT_SECRET[\s\S]*ENCRYPTION_KEY|ENCRYPTION_KEY[\s\S]*JWT_SECRET/);
+  });
+
+  it("refuses short or shared JWT secrets", () => {
+    expect(() => loadEnv({ ...prod, JWT_SECRET: "short" })).toThrow("at least 32");
+    expect(() => loadEnv({ ...prod, JWT_REFRESH_SECRET: prod.JWT_SECRET })).toThrow("must differ");
+  });
+
+  it("still allows the defaults outside production", () => {
+    const { JWT_SECRET: _j, JWT_REFRESH_SECRET: _r, ENCRYPTION_KEY: _k, ...rest } = base;
+    void _j;
+    void _r;
+    void _k;
+    expect(loadEnv({ ...rest, NODE_ENV: "development" }).JWT_SECRET).toBe(DEV_SECRETS.JWT_SECRET);
   });
 });
 
