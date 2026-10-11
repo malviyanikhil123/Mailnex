@@ -52,6 +52,13 @@ describe("per-route rate limits (no DB required)", () => {
     expect((await create(602)).statusCode).toBe(400);
   });
 
+  it("PATCH /settings/gmail allows 5 a minute per user (it logs in to Gmail)", async () => {
+    const send = (sub: number) => app.inject({ method: "PATCH", url: "/settings/gmail", headers: bearer(sub), payload: {} });
+    for (let i = 0; i < 5; i++) expect((await send(701)).statusCode).toBe(400);
+    expect((await send(701)).statusCode).toBe(429);
+    expect((await send(702)).statusCode).toBe(400);
+  });
+
   it("still requires a token before counting", async () => {
     const res = await app.inject({ method: "POST", url: "/senders", payload: {} });
     expect(res.statusCode).toBe(401);

@@ -7,6 +7,7 @@ import {
   type ProfileField,
 } from "./settings.repo.js";
 import { aiProvidersService } from "../ai-providers/ai-providers.service.js";
+import { smtpVerify, verifyGmailOrThrow, type VerifyCreds } from "../../integrations/email/verify-gmail.js";
 import type {
   UpdateGmailInput,
   SenderProfile,
@@ -42,6 +43,7 @@ export class SettingsService {
   constructor(
     private repo: ISettingsRepo = settingsRepo,
     private aiKeys: AiKeysLookup = aiProvidersService,
+    private verify: VerifyCreds = smtpVerify,
   ) {}
 
   // ---- secret reads (decrypt) ------------------------------------------------
@@ -111,7 +113,10 @@ export class SettingsService {
 
   // ---- updates ---------------------------------------------------------------
 
+  /** Logs in to Gmail with the credentials first (as adding a sender does); nothing is
+   *  stored when Gmail rejects them. */
   async updateGmail(userId: number, input: UpdateGmailInput): Promise<void> {
+    await verifyGmailOrThrow(this.verify, input.email, input.appPassword);
     await this.repo.patchApp(userId, {
       gmailEmail: input.email,
       gmailAppPasswordEnc: encrypt(input.appPassword),

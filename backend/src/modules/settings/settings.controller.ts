@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { authGuard } from "../../middleware/auth-guard.js";
+import { perUserRateLimit } from "../../middleware/rate-limit.js";
 import { settingsService } from "./settings.service.js";
 import {
   updateGmailSchema,
@@ -19,8 +20,12 @@ export async function settingsController(app: FastifyInstance) {
     return reply.code(200).send(await settingsService.getPublic(userId));
   });
 
-  /** PATCH /settings/gmail — store Gmail email + encrypted app password. */
-  app.patch("/gmail", { preHandler: authGuard }, async (req, reply) => {
+  /** PATCH /settings/gmail — verify with Gmail, then store email + encrypted app password.
+   *  It logs in with the submitted password, so it is limited per user like /senders. */
+  app.patch("/gmail", {
+    preHandler: authGuard,
+    config: { rateLimit: perUserRateLimit("settings-gmail") },
+  }, async (req, reply) => {
     const userId = getUserId(req);
     const input = updateGmailSchema.parse(req.body);
     await settingsService.updateGmail(userId, input);

@@ -1,5 +1,5 @@
 import { encrypt, decrypt } from "../../utils/crypto.js";
-import { getEmailProvider } from "../../integrations/email/factory.js";
+import { smtpVerify, verifyGmailOrThrow, type VerifyCreds } from "../../integrations/email/verify-gmail.js";
 import { settingsService } from "../settings/settings.service.js";
 import { sendersRepo, type SendersRepo, type SenderAccount } from "./senders.repo.js";
 import type { CreateSenderInput, UpdateSenderInput } from "./senders.schema.js";
@@ -21,11 +21,7 @@ export interface SenderCreds {
   dailyLimit: number;
 }
 
-/** Checks Gmail accepts the credentials; rejects with the SMTP error otherwise. */
-export type VerifyCreds = (email: string, password: string) => Promise<void>;
-
-const smtpVerify: VerifyCreds = (email, password) =>
-  getEmailProvider({ provider: "gmail", gmail: { user: email, pass: password } }).verify();
+export type { VerifyCreds };
 
 function httpError(statusCode: number, message: string): Error & { statusCode: number } {
   const err = new Error(message) as Error & { statusCode: number };
@@ -95,12 +91,8 @@ export class SendersService {
     return { email: row.email, password: decrypt(row.appPasswordEnc), dailyLimit: row.dailyLimit };
   }
 
-  private async verifyOrThrow(email: string, password: string): Promise<void> {
-    try {
-      await this.verify(email, password);
-    } catch {
-      throw httpError(400, "Gmail rejected these credentials — check the address and the 16-character app password");
-    }
+  private verifyOrThrow(email: string, password: string): Promise<void> {
+    return verifyGmailOrThrow(this.verify, email, password);
   }
 }
 

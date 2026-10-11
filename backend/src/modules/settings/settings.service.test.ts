@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { SettingsService } from "./settings.service.js";
 import type {
   ISettingsRepo,
@@ -40,12 +40,29 @@ describe("SettingsService", () => {
   let repo: ReturnType<typeof makeFakeRepo>;
   let service: SettingsService;
   let aiKeys: { hasAny: (userId: number) => Promise<boolean> };
+  let verify: ReturnType<typeof vi.fn>;
   const userId = 1;
 
   beforeEach(() => {
     repo = makeFakeRepo();
     aiKeys = { hasAny: async () => false };
-    service = new SettingsService(repo, aiKeys);
+    verify = vi.fn(async () => {});
+    service = new SettingsService(repo, aiKeys, verify);
+  });
+
+  it("logs in to Gmail with the credentials before saving them", async () => {
+    await service.updateGmail(userId, { email: "me@gmail.com", appPassword: "abcdefghijklmnop" });
+    expect(verify).toHaveBeenCalledWith("me@gmail.com", "abcdefghijklmnop");
+    expect(repo.app.gmailEmail).toBe("me@gmail.com");
+  });
+
+  it("does not store credentials Gmail rejects, and answers like the senders page", async () => {
+    verify.mockRejectedValueOnce(new Error("535-5.7.8 Username and Password not accepted"));
+    await expect(service.updateGmail(userId, { email: "me@gmail.com", appPassword: "abcdefghijklmnop" }))
+      .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/^Gmail rejected these credentials/) });
+    expect(repo.app.gmailEmail).toBeUndefined();
+    expect(repo.app.gmailAppPasswordEnc).toBeUndefined();
+    expect((await service.getPublic(userId)).gmailConfigured).toBe(false);
   });
 
   it("encrypts the Gmail app password at rest and round-trips via getGmailCreds", async () => {
