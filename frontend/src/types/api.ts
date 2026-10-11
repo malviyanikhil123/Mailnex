@@ -165,6 +165,8 @@ export interface Campaign extends CampaignInput {
   quotaToday: number;
   nextScheduledAt: string | null;
   countsByStatus: Record<string, number>;
+  /** AI is on for this campaign and the user has a key for its provider (any key when none is picked). */
+  aiActive: boolean;
   createdAt: string;
   updatedAt: string;
 }
