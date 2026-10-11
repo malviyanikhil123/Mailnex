@@ -15,6 +15,7 @@ FROM nginx:alpine
 
 # SPA fallback: without this, refreshing any route other than / returns 404.
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx/snippets/security-headers.conf /etc/nginx/snippets/security-headers.conf
 
 COPY --from=build /app/dist /usr/share/nginx/html
 
