@@ -4,6 +4,7 @@ import { LIMITS } from "../../config/constants.js";
 import { TEMPLATE_SEED } from "../../db/seed/templates.js";
 import { buildHtmlEmailPrompt, extractHtmlDocument } from "../../integrations/ai/html-email-prompt.js";
 import { aiProvidersService, type AiGenerateRequest } from "../ai-providers/ai-providers.service.js";
+import { documentsRepo, type IDocumentsRepo } from "../documents/documents.repo.js";
 import {
   templatesRepo as defaultRepo,
   TemplatesRepo,
@@ -54,9 +55,11 @@ export class TemplatesService {
   constructor(
     private repo: TemplatesRepo,
     private ai: TemplateAi = aiProvidersService,
+    private documents: Pick<IDocumentsRepo, "get"> = documentsRepo,
   ) {}
 
   async create(userId: number, input: CreateTemplateInput): Promise<Template> {
+    await this.checkDocument(userId, input.documentId);
     const data = input.format === "html" ? { ...input, body: cleanHtmlBody(input.body) } : input;
     return this.repo.create(userId, data);
   }
@@ -74,6 +77,7 @@ export class TemplatesService {
   async update(userId: number, id: number, data: UpdateTemplateInput): Promise<Template> {
     const existing = await this.repo.getById(userId, id);
     if (!existing) throw notFound(id);
+    if (data.documentId !== existing.documentId) await this.checkDocument(userId, data.documentId);
 
     // A new body, or a switch to HTML, is sanitized against the format it will have.
     const format: TemplateFormat = data.format ?? existing.format ?? "text";
@@ -94,6 +98,12 @@ export class TemplatesService {
     });
     if (!updated) throw notFound(id);
     return updated;
+  }
+
+  /** An attached document must be one of the user's own. */
+  private async checkDocument(userId: number, documentId: number | null | undefined): Promise<void> {
+    if (documentId == null) return;
+    if (!(await this.documents.get(userId, documentId))) throw httpError(400, "Document not found");
   }
 
   async remove(userId: number, id: number): Promise<void> {

@@ -44,6 +44,42 @@ describe("TemplatesService (unit, mocked repo)", () => {
     expect(result).toEqual(expected);
   });
 
+  describe("attached document", () => {
+    const ownDoc = { get: vi.fn(async (_userId: number, id: number) => (id === 5 ? ({ id: 5 } as never) : null)) };
+    const input = { name: "t", subject: "S", body: "B", category: "general" };
+
+    beforeEach(() => ownDoc.get.mockClear());
+
+    it("create accepts one of the user's own documents", async () => {
+      const service = new TemplatesService(repo, undefined, ownDoc);
+      mocked(repo.create).mockResolvedValue({ id: 1 });
+      await service.create(userId, { ...input, documentId: 5 });
+      expect(ownDoc.get).toHaveBeenCalledWith(userId, 5);
+      expect(repo.create).toHaveBeenCalled();
+    });
+
+    it("create rejects a document the user does not own with 400", async () => {
+      const service = new TemplatesService(repo, undefined, ownDoc);
+      await expect(service.create(userId, { ...input, documentId: 99 }))
+        .rejects.toMatchObject({ statusCode: 400, message: "Document not found" });
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it("update rejects a new document the user does not own, and skips the check when unchanged or cleared", async () => {
+      const service = new TemplatesService(repo, undefined, ownDoc);
+      mocked(repo.getById).mockResolvedValue({ id: 1, userId, name: "t", subject: "S", body: "B", format: "text", version: 1, documentId: 5 });
+      mocked(repo.update).mockResolvedValue({ id: 1 });
+
+      await expect(service.update(userId, 1, { documentId: 99 })).rejects.toMatchObject({ statusCode: 400 });
+      expect(repo.update).not.toHaveBeenCalled();
+
+      await service.update(userId, 1, { documentId: 5 });
+      await service.update(userId, 1, { documentId: null });
+      expect(ownDoc.get).toHaveBeenCalledTimes(1);
+      expect(repo.update).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it("list delegates to repo.list", async () => {
     const service = new TemplatesService(repo);
 
