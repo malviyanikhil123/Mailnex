@@ -5,6 +5,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { authApi } from "../services/auth.api";
 import { useAuth } from "../store/auth";
+import { adoptSession, alreadySignedInMessage, existingSession } from "../store/auth-sync";
 import { toast } from "../store/toast";
 import { Button, Card, Input } from "../components/ui/primitives";
 import { PasswordInput } from "../components/ui/PasswordInput";
@@ -46,9 +47,20 @@ export default function Login() {
   } = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { rememberMe: false } });
 
   const mutation = useMutation({
-    mutationFn: ({ email, password, rememberMe }: FormValues) => authApi.login(email, password, rememberMe),
-    onSuccess: (data, { rememberMe }) => {
-      setAuth({ ...data, rememberMe });
+    mutationFn: async ({ email, password, rememberMe }: FormValues) => {
+      // Another tab may have signed in since this page opened: keep that account rather
+      // than replacing it (one account per browser; sign out first to switch).
+      const existing = await existingSession();
+      if (existing) return { kind: "existing" as const, session: existing };
+      return { kind: "signedIn" as const, data: await authApi.login(email, password, rememberMe) };
+    },
+    onSuccess: (result, { rememberMe }) => {
+      if (result.kind === "existing") {
+        adoptSession(result.session);
+        toast.info(alreadySignedInMessage(result.session));
+      } else {
+        setAuth({ ...result.data, rememberMe });
+      }
       navigate("/");
     },
     onError: (err) => toast.error(loginErrorMessage(err)),

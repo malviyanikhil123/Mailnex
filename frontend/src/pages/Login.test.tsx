@@ -8,6 +8,7 @@ vi.mock("../services/auth.api", () => ({ authApi }));
 
 const { default: Login } = await import("./Login");
 const { AUTH_STORAGE_KEY, useAuth } = await import("../store/auth");
+const { useToast } = await import("../store/toast");
 
 const user = { id: 1, name: "Jane", email: "jane@example.com" };
 
@@ -67,5 +68,22 @@ describe("Login", () => {
     expect(localStorage.getItem(AUTH_STORAGE_KEY)).toContain('"refreshToken":"r"');
     expect(localStorage.getItem(AUTH_STORAGE_KEY)).not.toContain("hunter22");
     expect(sessionStorage.getItem(AUTH_STORAGE_KEY)).toBeNull();
+  });
+
+  it("keeps the account already signed in on this browser instead of signing in a second one", async () => {
+    // Another tab signed in as someone else with "Remember me" after this page opened.
+    const other = { accessToken: "b", refreshToken: "rb", rememberMe: true, user: { id: 2, name: "Bo", email: "bo@example.com" } };
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ state: other, version: 0 }));
+    useToast.setState({ toasts: [] });
+    renderLogin();
+    signIn();
+
+    fireEvent.click(screen.getByLabelText("Remember me (30 days)"));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(useAuth.getState().user?.id).toBe(2));
+    expect(authApi.login).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY)!).state.refreshToken).toBe("rb");
+    expect(useToast.getState().toasts.map((t) => t.message).join()).toMatch(/already signed in as bo@example.com/);
   });
 });

@@ -96,4 +96,33 @@ describe("legacy storage key", () => {
 
     expect(value?.state).toMatchObject({ refreshToken: "r", rememberMe: false });
   });
+  it("prefers this tab's own session over another user's remembered one", () => {
+    localStorage.setItem(
+      AUTH_STORAGE_KEY,
+      JSON.stringify({ state: { accessToken: "b", refreshToken: "rb", user: { ...user, id: 2 }, rememberMe: true }, version: 0 }),
+    );
+    sessionStorage.setItem(
+      AUTH_STORAGE_KEY,
+      JSON.stringify({ state: { accessToken: "a", refreshToken: "ra", user, rememberMe: false }, version: 0 }),
+    );
+
+    const value = authStorage.getItem(AUTH_STORAGE_KEY) as { state: { refreshToken: string } } | null;
+
+    expect(value?.state.refreshToken).toBe("ra");
+  });
+
+  it("uses the remembered session when this tab's own storage only holds a sign-out", () => {
+    localStorage.setItem(
+      AUTH_STORAGE_KEY,
+      JSON.stringify({ state: { accessToken: "b", refreshToken: "rb", user, rememberMe: true }, version: 0 }),
+    );
+    sessionStorage.setItem(
+      AUTH_STORAGE_KEY,
+      JSON.stringify({ state: { accessToken: null, refreshToken: null, user: null, rememberMe: false }, version: 0 }),
+    );
+
+    const value = authStorage.getItem(AUTH_STORAGE_KEY) as { state: { refreshToken: string } } | null;
+
+    expect(value?.state.refreshToken).toBe("rb");
+  });
 });

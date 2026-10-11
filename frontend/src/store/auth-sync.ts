@@ -15,7 +15,8 @@ export const SESSION_REQUEST_TIMEOUT_MS = 300;
 type Message =
   | { type: "session-request"; requestId: string }
   | { type: "session"; requestId?: string; session: AuthSession }
-  | { type: "logout" };
+  /** Only tabs signed in as `userId` sign out; other users' tabs are left alone. */
+  | { type: "logout"; userId: number };
 
 /** `ready` turns true once this tab knows whether it has a session (other tabs were asked). */
 export const useAuthSync = create<{ ready: boolean }>(() => ({ ready: false }));
@@ -43,7 +44,7 @@ function isSession(v: unknown): v is AuthSession {
 function parse(data: unknown): Message | null {
   if (!data || typeof data !== "object") return null;
   const m = data as Record<string, unknown>;
-  if (m.type === "logout") return { type: "logout" };
+  if (m.type === "logout" && typeof m.userId === "number") return { type: "logout", userId: m.userId };
   if (m.type === "session-request" && typeof m.requestId === "string") {
     return { type: "session-request", requestId: m.requestId };
   }
@@ -93,7 +94,7 @@ function onMessage(data: unknown) {
     if (mine.refreshToken && mine.user?.id === msg.session.user.id) {
       applyRemote(() => mine.setAuth(msg.session));
     }
-  } else {
+  } else if (useAuth.getState().user?.id === msg.userId) {
     applyRemote(() => useAuth.getState().clear());
   }
 }
@@ -154,10 +155,34 @@ export async function recoverSession(staleRefreshToken: string): Promise<AuthSes
   return usable(currentSession());
 }
 
-/** Signs this tab out and tells the other tabs to do the same. */
+/** Signs this tab out and tells the other tabs signed in as the same user to do the same. */
 export function signOutAllTabs() {
-  post({ type: "logout" });
+  const userId = useAuth.getState().user?.id;
+  if (userId !== undefined) post({ type: "logout", userId });
   applyRemote(() => useAuth.getState().clear());
+}
+
+/**
+ * A session this browser already has, from storage (a remembered sign-in) or from another
+ * open tab; null when there is none. The login and register pages check this before
+ * signing in, so a second account never replaces the one the other tabs use: localStorage
+ * is shared, and a remembered sign-in there would come back in every tab on reload.
+ */
+export async function existingSession(timeoutMs = SESSION_REQUEST_TIMEOUT_MS): Promise<AuthSession | null> {
+  const own = currentSession();
+  if (own) return own;
+  const saved = (await authStorage.getItem(AUTH_STORAGE_KEY))?.state;
+  if (isSession(saved)) return saved;
+  return requestSession(timeoutMs);
+}
+
+/** Signs this tab in with a session found by existingSession() (not announced back). */
+export function adoptSession(session: AuthSession) {
+  applyRemote(() => useAuth.getState().setAuth(session));
+}
+
+export function alreadySignedInMessage(session: AuthSession): string {
+  return `You're already signed in as ${session.user.email} in this browser. Sign out first to use another account.`;
 }
 
 /** Opens the channel and, if this tab has no session yet, asks the others for theirs. */

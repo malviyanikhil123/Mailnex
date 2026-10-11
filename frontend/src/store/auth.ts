@@ -54,7 +54,11 @@ const session = () => window.sessionStorage;
  *  being saved, and clears the other one so tokens never sit in both. */
 export const authStorage: PersistStorage<PersistedAuth> = {
   getItem: (name) => {
-    const current = read(local, name) ?? read(session, name);
+    // This tab's own (not remembered) session wins: localStorage is shared by every tab,
+    // and another tab may have saved a different user's remembered session there.
+    const own = read(session, name);
+    if (own?.state?.refreshToken) return own;
+    const current = read(local, name) ?? own;
     if (current) return current;
     const legacy = read(local, LEGACY_AUTH_STORAGE_KEY);
     if (!legacy) return null;

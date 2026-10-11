@@ -5,6 +5,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { authApi } from "../services/auth.api";
 import { useAuth } from "../store/auth";
+import { adoptSession, alreadySignedInMessage, existingSession } from "../store/auth-sync";
 import { toast } from "../store/toast";
 import { Button, Card, Input } from "../components/ui/primitives";
 import { PasswordInput } from "../components/ui/PasswordInput";
@@ -42,11 +43,20 @@ export default function Register() {
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
 
   const mutation = useMutation({
-    mutationFn: ({ name, email, password }: FormValues) =>
-      authApi.register(name, email, password),
-    onSuccess: (data) => {
-      setAuth(data);
-      toast.success("Account created successfully!");
+    mutationFn: async ({ name, email, password }: FormValues) => {
+      // Another tab may have signed in since this page opened: keep that account (see Login).
+      const existing = await existingSession();
+      if (existing) return { kind: "existing" as const, session: existing };
+      return { kind: "registered" as const, data: await authApi.register(name, email, password) };
+    },
+    onSuccess: (result) => {
+      if (result.kind === "existing") {
+        adoptSession(result.session);
+        toast.info(alreadySignedInMessage(result.session));
+      } else {
+        setAuth(result.data);
+        toast.success("Account created successfully!");
+      }
       navigate("/");
     },
     onError: (err: any) => {

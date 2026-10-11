@@ -1,7 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { waitFor } from "@testing-library/react";
 import { AUTH_STORAGE_KEY, useAuth, type AuthSession } from "./auth";
-import { recoverSession, signOutAllTabs, startAuthSync, stopAuthSync, useAuthSync } from "./auth-sync";
+import {
+  existingSession,
+  recoverSession,
+  signOutAllTabs,
+  startAuthSync,
+  stopAuthSync,
+  useAuthSync,
+} from "./auth-sync";
 
 const user = { id: 1, name: "Jane", email: "jane@example.com" };
 const session: AuthSession = { accessToken: "a1", refreshToken: "r1", user, rememberMe: false };
@@ -117,13 +124,33 @@ describe("auth sync between tabs", () => {
     startAuthSync();
     const p = openPeer();
 
-    p.postMessage({ type: "logout" });
+    p.postMessage({ type: "logout", userId: 1 });
     await waitFor(() => expect(useAuth.getState().accessToken).toBeNull());
 
     useAuth.getState().setAuth(session);
     signOutAllTabs();
     expect(useAuth.getState().accessToken).toBeNull();
-    await waitFor(() => expect(heard).toContainEqual({ type: "logout" }));
+    await waitFor(() => expect(heard).toContainEqual({ type: "logout", userId: 1 }));
+  });
+
+  it("stays signed in when a tab signed in as another user signs out", async () => {
+    useAuth.getState().setAuth(session);
+    startAuthSync();
+    const p = openPeer();
+
+    p.postMessage({ type: "logout", userId: 2 });
+    p.postMessage({ type: "logout" }); // no user: ignored too
+    await flush(p);
+
+    expect(useAuth.getState()).toMatchObject({ accessToken: "a1", user });
+  });
+
+  it("does not announce a sign-out when this tab was not signed in", async () => {
+    startAuthSync();
+    openPeer();
+    signOutAllTabs();
+    await sleep(30);
+    expect(heard.filter((m) => m.type === "logout")).toHaveLength(0);
   });
 
   it("ignores malformed messages", async () => {
@@ -215,5 +242,33 @@ describe("recoverSession", () => {
 
     expect(await recoverSession("r1")).toBeNull();
     expect(useAuth.getState().user?.id).toBe(1);
+  });
+});
+
+describe("existingSession", () => {
+  it("finds a remembered session another tab saved", async () => {
+    startAuthSync();
+    await waitFor(() => expect(useAuthSync.getState().ready).toBe(true), { timeout: 2000 });
+    const other = { ...session, refreshToken: "theirs", user: { ...user, id: 2 }, rememberMe: true };
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ state: other, version: 0 }));
+
+    expect(await existingSession(50)).toMatchObject({ refreshToken: "theirs", user: { id: 2 } });
+    expect(useAuth.getState().accessToken).toBeNull(); // only looked at, not loaded
+  });
+
+  it("asks the open tabs for a session that is not remembered", async () => {
+    startAuthSync();
+    await waitFor(() => expect(useAuthSync.getState().ready).toBe(true), { timeout: 2000 });
+    openPeer(session); // signed in after this tab asked at start-up
+
+    expect(await existingSession()).toEqual(session);
+  });
+
+  it("is null when the browser has no session", async () => {
+    startAuthSync();
+    await waitFor(() => expect(useAuthSync.getState().ready).toBe(true), { timeout: 2000 });
+    openPeer();
+
+    expect(await existingSession(50)).toBeNull();
   });
 });
