@@ -57,7 +57,7 @@ export default function Login() {
     onSuccess: (result, { rememberMe }) => {
       if (result.kind === "existing") {
         adoptSession(result.session);
-        toast.info(alreadySignedInMessage(result.session));
+        toast.error(alreadySignedInMessage(result.session));
       } else {
         setAuth({ ...result.data, rememberMe });
       }

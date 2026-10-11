@@ -52,7 +52,7 @@ export default function Register() {
     onSuccess: (result) => {
       if (result.kind === "existing") {
         adoptSession(result.session);
-        toast.info(alreadySignedInMessage(result.session));
+        toast.error(alreadySignedInMessage(result.session));
       } else {
         setAuth(result.data);
         toast.success("Account created successfully!");
