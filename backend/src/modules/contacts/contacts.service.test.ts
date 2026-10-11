@@ -149,6 +149,25 @@ describe("ContactsService.importFromFile (unit, mocked repo)", () => {
     ]);
   });
 
+  it("fails the import with a clear message when the file has no email column", async () => {
+    const tmpFile = path.join(os.tmpdir(), `${crypto.randomUUID()}.csv`);
+    await fs.writeFile(tmpFile, "Name,Company\nAda,Acme\n", "utf8");
+
+    const { ContactsService, importProgress, NO_EMAIL_COLUMN_MESSAGE } = await import("./contacts.service.js");
+    const { ContactsRepo } = await import("./contacts.repo.js");
+    const recordImport = vi.fn();
+    const fakeRepo = { recordImport } as unknown as InstanceType<typeof ContactsRepo>;
+
+    const jobId = crypto.randomUUID();
+    await expect(new ContactsService(fakeRepo).importFromFile(1, tmpFile, "people.csv", jobId)).rejects.toThrow(
+      NO_EMAIL_COLUMN_MESSAGE,
+    );
+    expect(NO_EMAIL_COLUMN_MESSAGE).toBe("No email column found. Add a column named email.");
+    expect(importProgress.get(jobId)).toMatchObject({ done: true, error: NO_EMAIL_COLUMN_MESSAGE });
+    expect(recordImport).not.toHaveBeenCalled();
+    await expect(fs.access(tmpFile)).rejects.toThrow();
+  });
+
   it("finishes the job with a readable error when the file is not a spreadsheet", async () => {
     const tmpFile = path.join(os.tmpdir(), `${crypto.randomUUID()}.xlsx`);
     await fs.writeFile(tmpFile, "this is not a zip file");

@@ -252,6 +252,20 @@ describe("parseContactsXlsx", () => {
     expect(rows.map((r) => r.email)).toEqual(["", "", "linus@x.io"]);
   });
 
+  it("reports a file with no email column and no addresses anywhere", async () => {
+    const file = await csv("Name,Company\nAda,Acme\n");
+    const { rows, total, noEmailColumn } = await parse(file);
+    expect(noEmailColumn).toBe(true);
+    expect(total).toBe(1);
+    expect(rows[0].email).toBe("");
+  });
+
+  it("does not report a missing email column when the header names one or a column holds addresses", async () => {
+    expect((await parse(await xlsx([["Name", "Email"], ["Ada", "not-an-email"]]))).noEmailColumn).toBe(false);
+    expect((await parse(await xlsx([["Name", "Correo"], ["Ana", "ana@x.es"]]))).noEmailColumn).toBe(false);
+    expect((await parse(await csv(""))).noEmailColumn).toBe(false);
+  });
+
   it("skips blank rows and does not count them", async () => {
     const file = await xlsx([["Email"], ["a@x.io"], [""], ["b@x.io"]]);
     const { rows, total } = await parse(file);

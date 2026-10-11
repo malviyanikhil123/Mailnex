@@ -45,12 +45,14 @@ function evictImportProgress(jobId: string): void {
 
 const PROGRESS_TTL_MS = 5 * 60 * 1000;
 
-/** The upload is not a readable spreadsheet; the message is shown to the user. */
+/** The upload cannot be imported as it is; the message is shown to the user. */
 class UnreadableFileError extends Error {
-  constructor() {
-    super("Could not read the file. Upload an .xlsx or .csv file.");
+  constructor(message = "Could not read the file. Upload an .xlsx or .csv file.") {
+    super(message);
   }
 }
+
+export const NO_EMAIL_COLUMN_MESSAGE = "No email column found. Add a column named email.";
 
 export class ContactsService {
   constructor(private repo: ContactsRepo) {}
@@ -82,6 +84,11 @@ export class ContactsService {
       } catch (err) {
         logger.warn({ err, jobId }, "import: could not read the uploaded file");
         throw new UnreadableFileError();
+      }
+      // Without an email column every row would only count as invalid. (A stray address
+      // in another column still gets picked up per row, so only fail when none was found.)
+      if (parsed.noEmailColumn && !allRows.some((row) => row.email)) {
+        throw new UnreadableFileError(NO_EMAIL_COLUMN_MESSAGE);
       }
       const totalRows = parsed.total;
 

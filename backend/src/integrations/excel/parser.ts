@@ -27,6 +27,9 @@ export type ParseResult = {
   skipped: number;
   /** Keys of the columns stored in customFields, in column order. */
   customFieldKeys: string[];
+  /** True when the file has rows but no header names an email column and no column
+   *  holds an address. */
+  noEmailColumn: boolean;
 };
 
 export const IMPORT_LIMITS = {
@@ -426,7 +429,7 @@ export async function parseContactsXlsx(
     ? await scanCsv(filePath, keep)
     : await scanXlsx(filePath, keep, options.maxRowsRead ?? MAX_ROWS_READ, options.xlsxLimits ?? XLSX_LIMITS);
 
-  const empty: ParseResult = { total: 0, skipped: 0, customFieldKeys: [] };
+  const empty: ParseResult = { total: 0, skipped: 0, customFieldKeys: [], noEmailColumn: false };
   if (!scan || scan.rows.length === 0) return empty;
 
   const detected = scan.header ?? detectHeader(scan.rows);
@@ -495,5 +498,6 @@ export async function parseContactsXlsx(
     total: totalData,
     skipped: totalData - rowsToRead,
     customFieldKeys: custom.map((c) => c.key),
+    noEmailColumn: fields.email === undefined,
   };
 }
