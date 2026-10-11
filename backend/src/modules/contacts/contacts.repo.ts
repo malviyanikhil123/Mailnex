@@ -92,11 +92,18 @@ export class ContactsRepo {
 
   async delete(userId: number, id: number) {
     return db.transaction(async (tx) => {
-      // 1. Remove pending queue entries for this contact
-      await tx.delete(campaignQueue).where(eq(campaignQueue.contactId, id));
-      // 2. Remove email logs associated with this contact
-      await tx.delete(emailLogs).where(eq(emailLogs.contactId, id));
-      // 3. Delete the contact (scoped to user)
+      // 1. The contact must be the caller's — otherwise nothing below may run, or any
+      //    user could wipe another tenant's queue and logs by looping over ids.
+      const [owned] = await tx
+        .select({ id: contacts.id })
+        .from(contacts)
+        .where(and(eq(contacts.id, id), eq(contacts.userId, userId)));
+      if (!owned) return null;
+      // 2. Remove pending queue entries for this contact
+      await tx.delete(campaignQueue).where(and(eq(campaignQueue.contactId, id), eq(campaignQueue.userId, userId)));
+      // 3. Remove email logs associated with this contact
+      await tx.delete(emailLogs).where(and(eq(emailLogs.contactId, id), eq(emailLogs.userId, userId)));
+      // 4. Delete the contact (scoped to user)
       const [row] = await tx
         .delete(contacts)
         .where(and(eq(contacts.id, id), eq(contacts.userId, userId)))
