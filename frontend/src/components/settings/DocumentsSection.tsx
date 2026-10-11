@@ -4,7 +4,8 @@ import { settingsApi } from "../../services/settings.api";
 import { Button, Card, Input, Spinner } from "../ui/primitives";
 import { toast } from "../../store/toast";
 import type { DocumentLimits } from "../../types/api";
-import { errorMessage, SectionHeader } from "./shared";
+import { errorMessage } from "../../services/errors";
+import { SectionHeader } from "./shared";
 
 const MB = 1024 * 1024;
 const formatMb = (bytes: number) => `${Number((bytes / MB).toFixed(1))} MB`;

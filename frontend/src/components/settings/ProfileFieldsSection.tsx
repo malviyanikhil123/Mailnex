@@ -4,7 +4,8 @@ import { settingsApi } from "../../services/settings.api";
 import { Button, Card, Input } from "../ui/primitives";
 import { toast } from "../../store/toast";
 import type { ProfileField } from "../../types/api";
-import { errorMessage, SectionHeader } from "./shared";
+import { errorMessage } from "../../services/errors";
+import { SectionHeader } from "./shared";
 
 /** User-defined profile fields, usable in templates as {{key}}. */
 export function ProfileFieldsSection({ fields, onSaved }: { fields: ProfileField[]; onSaved: () => void }) {

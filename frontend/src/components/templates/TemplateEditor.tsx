@@ -1,10 +1,10 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { templatesApi, type TemplateInput } from "../../services/templates.api";
-import { Button, Input, Textarea } from "../ui/primitives";
+import { Button, Input, Textarea, selectClass } from "../ui/primitives";
 import { Modal } from "../ui/Modal";
 import { toast } from "../../store/toast";
-import { errorMessage } from "../settings/shared";
+import { errorMessage } from "../../services/errors";
 import type { ProfileField, SenderProfile, Template, TemplateFormat, UserDocument } from "../../types/api";
 import { HtmlPreview } from "./HtmlPreview";
 import { GenerateHtmlDialog } from "./GenerateHtmlDialog";
@@ -29,8 +29,6 @@ export function categoryLabel(value: string): string {
 
 const MAX_BODY_BYTES = 100 * 1024;
 
-const selectClass =
-  "w-full rounded-lg border border-[#BAE6FD] bg-[#F1F5F9] px-3 py-2 text-sm text-gray-900 outline-none focus:border-[#60A5FA] focus:ring-2 focus:ring-[#60A5FA]/30 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100";
 const labelClass = "mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300";
 
 function initialForm(t: Template | null): Required<TemplateInput> {

@@ -8,11 +8,8 @@ import { Modal } from "../components/ui/Modal";
 import { CampaignCard } from "../components/campaign/CampaignCard";
 import { CampaignForm } from "../components/campaign/CampaignForm";
 import { toast } from "../store/toast";
+import { errorMessage } from "../services/errors";
 import type { Campaign as CampaignRow, CampaignInput } from "../types/api";
-
-function errorMessage(err: unknown, fallback: string): string {
-  return (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback;
-}
 
 export default function Campaign() {
   const qc = useQueryClient();

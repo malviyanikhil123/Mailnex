@@ -4,7 +4,8 @@ import { settingsApi } from "../../services/settings.api";
 import { Button, Card, Input, Textarea } from "../ui/primitives";
 import { toast } from "../../store/toast";
 import type { SenderProfile } from "../../types/api";
-import { errorMessage, SectionHeader } from "./shared";
+import { errorMessage } from "../../services/errors";
+import { SectionHeader } from "./shared";
 
 type LineField = Exclude<keyof SenderProfile, "signature">;
 

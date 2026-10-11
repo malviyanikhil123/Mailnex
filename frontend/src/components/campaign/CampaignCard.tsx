@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { campaignApi } from "../../services/campaign.api";
 import { Button, Card } from "../ui/primitives";
 import { toast } from "../../store/toast";
+import { errorMessage } from "../../services/errors";
 import type { Campaign, SenderAccount } from "../../types/api";
 
 type Action = "start" | "pause" | "resume" | "stop";
@@ -12,10 +13,6 @@ const STATE_STYLES: Record<string, string> = {
   STOPPED: "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
   IDLE: "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
 };
-
-function errorMessage(err: unknown, fallback: string): string {
-  return (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback;
-}
 
 export function CampaignCard({
   campaign: c,

@@ -74,6 +74,26 @@ export const Textarea = forwardRef<
 
 Textarea.displayName = "Textarea";
 
+/**
+ * Native <select> styling to match Input: border, colours and focus ring only, so callers
+ * pick width, padding and text size. Most use `selectClass`.
+ */
+export const selectBaseClass =
+  "rounded-lg border border-[#BAE6FD] bg-[#F1F5F9] text-gray-900 outline-none focus:border-[#60A5FA] focus:ring-2 focus:ring-[#60A5FA]/30 dark:border-[#164549] dark:bg-[#12282c] dark:text-gray-100";
+
+/** A full-width <select> the size of an Input. */
+export const selectClass = `w-full px-3 py-2 text-sm ${selectBaseClass}`;
+
+/** A small label above a form control. */
+export function Labeled({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium text-gray-500">{label}</label>
+      {children}
+    </div>
+  );
+}
+
 export function Spinner() {
   return (
     <div className="flex justify-center p-8">

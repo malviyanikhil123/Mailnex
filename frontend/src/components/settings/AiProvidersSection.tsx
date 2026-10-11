@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { aiApi } from "../../services/ai.api";
-import { Button, Card, Input } from "../ui/primitives";
+import { Button, Card, Input, selectClass } from "../ui/primitives";
 import { toast } from "../../store/toast";
 import type { AiProviderId, AiProviderStatus } from "../../types/api";
-import { errorMessage, SectionHeader } from "./shared";
+import { errorMessage } from "../../services/errors";
+import { SectionHeader } from "./shared";
 
 // ---------------------------------------------------------------------------
 // Key format checks — mirror backend/src/integrations/ai/providers.ts so an obvious
@@ -47,9 +48,6 @@ export function apiKeyProblem(provider: AiProviderId, raw: string): string | nul
 }
 
 const CUSTOM = "__custom__";
-
-const selectClass =
-  "w-full rounded-lg border border-[#BAE6FD] bg-[#F1F5F9] px-3 py-2 text-sm text-gray-900 outline-none focus:border-[#60A5FA] focus:ring-2 focus:ring-[#60A5FA]/30 dark:border-[#164549] dark:bg-[#12282c] dark:text-gray-100";
 
 /** API keys for the AI providers that personalize campaign emails and sort the inbox.
  *  Keys are write-only: format-checked here, checked live with the provider by the

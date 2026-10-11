@@ -3,10 +3,11 @@ import type { FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { settingsApi } from "../../services/settings.api";
 import { sendersApi } from "../../services/senders.api";
-import { Button, Card, Input } from "../ui/primitives";
+import { Button, Card, Input, Labeled } from "../ui/primitives";
 import { toast } from "../../store/toast";
 import type { SenderAccount } from "../../types/api";
-import { errorMessage, Labeled, SectionHeader } from "./shared";
+import { errorMessage } from "../../services/errors";
+import { SectionHeader } from "./shared";
 import { AppPasswordField } from "./AppPasswordField";
 import { appPasswordError, emailAddressError } from "./appPassword";
 

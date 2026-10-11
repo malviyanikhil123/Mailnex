@@ -3,7 +3,8 @@ import { useMutation } from "@tanstack/react-query";
 import { settingsApi } from "../../services/settings.api";
 import { Button, Card, Input } from "../ui/primitives";
 import { toast } from "../../store/toast";
-import { errorMessage, SectionHeader } from "./shared";
+import { errorMessage } from "../../services/errors";
+import { SectionHeader } from "./shared";
 import { AppPasswordField } from "./AppPasswordField";
 import { appPasswordError, emailAddressError } from "./appPassword";
 

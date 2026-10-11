@@ -3,18 +3,15 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { aiApi } from "../../services/ai.api";
 import { templatesApi } from "../../services/templates.api";
-import { Button, ErrorState, Input, Spinner, Textarea } from "../ui/primitives";
+import { Button, ErrorState, Input, Spinner, Textarea, selectClass } from "../ui/primitives";
 import { Modal } from "../ui/Modal";
-import { errorMessage } from "../settings/shared";
+import { errorMessage } from "../../services/errors";
 import type { AiProviderId, GeneratedHtml } from "../../types/api";
 
 const TONES = ["Professional", "Friendly", "Bold", "Minimal", "Playful", "Formal"];
 const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const DESCRIPTION_MIN = 10;
 const DESCRIPTION_MAX = 2000;
-
-const selectClass =
-  "w-full rounded-lg border border-[#BAE6FD] bg-[#F1F5F9] px-3 py-2 text-sm text-gray-900 outline-none focus:border-[#60A5FA] focus:ring-2 focus:ring-[#60A5FA]/30 dark:border-[#164549] dark:bg-[#12282c] dark:text-gray-100";
 
 /** "Generate with AI": describe the email, get an HTML design to review in the editor. */
 export function GenerateHtmlDialog({ onClose, onGenerated }: { onClose: () => void; onGenerated: (result: GeneratedHtml) => void }) {

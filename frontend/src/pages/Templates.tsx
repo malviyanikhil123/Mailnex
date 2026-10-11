@@ -2,17 +2,17 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { templatesApi } from "../services/templates.api";
 import { settingsApi } from "../services/settings.api";
-import { Button, Input, Spinner, ErrorState } from "../components/ui/primitives";
+import { Button, Input, Spinner, ErrorState, selectBaseClass } from "../components/ui/primitives";
 import { toast } from "../store/toast";
 import { TemplateCard } from "../components/templates/TemplateCard";
 import { TemplateEditor, categoryLabel } from "../components/templates/TemplateEditor";
 import { TemplatePreviewModal } from "../components/templates/TemplatePreviewModal";
 import { sampleVars } from "../components/templates/variables";
-import { errorMessage } from "../components/settings/shared";
+import { errorMessage } from "../services/errors";
 import type { Template, TemplatePreview } from "../types/api";
 
-const selectClass =
-  "w-full sm:w-auto rounded-lg border border-[#BAE6FD] bg-[#F1F5F9] px-2.5 sm:px-3 py-2 text-xs sm:text-sm text-gray-900 outline-none focus:border-[#60A5FA] focus:ring-2 focus:ring-[#60A5FA]/30 dark:border-[#164549] dark:bg-[#12282c] dark:text-gray-100";
+/** Filter selects: full width in the 2-column mobile grid, natural width from sm up. */
+const filterSelectClass = `w-full sm:w-auto px-2.5 sm:px-3 py-2 text-xs sm:text-sm ${selectBaseClass}`;
 
 export default function Templates() {
   const qc = useQueryClient();
@@ -117,7 +117,7 @@ export default function Templates() {
             aria-label="Format"
             value={formatFilter}
             onChange={(e) => setFormatFilter(e.target.value as "all" | "text" | "html")}
-            className={selectClass}
+            className={filterSelectClass}
           >
             <option value="all">All formats ({data.length})</option>
             <option value="text">Plain text ({data.length - htmlCount})</option>
@@ -127,7 +127,7 @@ export default function Templates() {
             aria-label="Category"
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className={selectClass}
+            className={filterSelectClass}
           >
             <option value="all">All categories</option>
             {categories.map((c) => (
