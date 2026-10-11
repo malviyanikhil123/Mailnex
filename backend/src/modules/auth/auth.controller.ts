@@ -3,6 +3,7 @@ import { AuthService } from "./auth.service.js";
 import { authRepo } from "./auth.repo.js";
 import { loginSchema, logoutSchema, registerSchema, refreshSchema } from "./auth.schema.js";
 import { authGuard } from "../../middleware/auth-guard.js";
+import { authRateLimit } from "../../middleware/rate-limit.js";
 
 export async function authController(app: FastifyInstance) {
   const signAccess = (payload: object) =>
@@ -10,7 +11,7 @@ export async function authController(app: FastifyInstance) {
   const service = new AuthService(authRepo, signAccess);
 
   // POST /auth/register
-  app.post("/register", async (req: FastifyRequest, reply: FastifyReply) => {
+  app.post("/register", { config: { rateLimit: authRateLimit("auth-register") } }, async (req: FastifyRequest, reply: FastifyReply) => {
     const body = registerSchema.parse(req.body);
     const result = await service.register(body.name, body.email, body.password, {
       userAgent: req.headers["user-agent"],
@@ -19,7 +20,7 @@ export async function authController(app: FastifyInstance) {
   });
 
   // POST /auth/login
-  app.post("/login", async (req: FastifyRequest, reply: FastifyReply) => {
+  app.post("/login", { config: { rateLimit: authRateLimit("auth-login") } }, async (req: FastifyRequest, reply: FastifyReply) => {
     const body = loginSchema.parse(req.body);
     const result = await service.login(body.email, body.password, {
       rememberMe: body.rememberMe,

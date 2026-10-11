@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { authGuard } from "../../middleware/auth-guard.js";
+import { perUserRateLimit } from "../../middleware/rate-limit.js";
 import { isAiProvider, type AiProvider } from "../../integrations/ai/providers.js";
 import { aiProvidersService } from "./ai-providers.service.js";
 import { saveAiProviderSchema } from "./ai-providers.schema.js";
@@ -20,8 +21,15 @@ export async function aiProvidersController(app: FastifyInstance) {
     return reply.code(200).send({ providers: await aiProvidersService.list(getUserId(req)) });
   });
 
-  /** PUT /ai-providers/:provider — connect / rotate the key, change the model, make default. */
-  app.put("/:provider", { preHandler: authGuard }, async (req, reply) => {
+  /**
+   * PUT /ai-providers/:provider — connect / rotate the key, change the model, make default.
+   * A save checks the key live, so it is limited per user to keep it from being used to
+   * test stolen keys.
+   */
+  app.put("/:provider", {
+    preHandler: authGuard,
+    config: { rateLimit: perUserRateLimit("ai-providers-save") },
+  }, async (req, reply) => {
     const provider = getProvider(req);
     const input = saveAiProviderSchema.parse(req.body);
     return reply.code(200).send({ providers: await aiProvidersService.save(getUserId(req), provider, input) });

@@ -38,3 +38,28 @@ describe("env proxy has trap", () => {
     expect("NONEXISTENT_KEY" in loadEnv(base)).toBe(false);
   });
 });
+
+describe("TRUST_PROXY", () => {
+  it("is off by default and for false / 0 / empty", () => {
+    expect(loadEnv(base).TRUST_PROXY).toBe(false);
+    for (const v of ["false", "0", "", " FALSE "]) expect(loadEnv({ ...base, TRUST_PROXY: v }).TRUST_PROXY).toBe(false);
+  });
+  it("accepts true or a hop count", () => {
+    expect(loadEnv({ ...base, TRUST_PROXY: "true" }).TRUST_PROXY).toBe(true);
+    expect(loadEnv({ ...base, TRUST_PROXY: "1" }).TRUST_PROXY).toBe(1);
+    expect(loadEnv({ ...base, TRUST_PROXY: "2" }).TRUST_PROXY).toBe(2);
+  });
+  it("rejects anything else rather than guessing", () => {
+    for (const v of ["yes", "10.0.0.0/8", "-1", "1.5"]) expect(() => loadEnv({ ...base, TRUST_PROXY: v })).toThrow();
+  });
+});
+
+describe("CORS_ORIGINS", () => {
+  it("is empty by default", () => {
+    expect(loadEnv(base).CORS_ORIGINS).toEqual([]);
+  });
+  it("splits, trims and drops trailing slashes and blanks", () => {
+    expect(loadEnv({ ...base, CORS_ORIGINS: " https://a.example/, http://localhost:5173 ,," }).CORS_ORIGINS)
+      .toEqual(["https://a.example", "http://localhost:5173"]);
+  });
+});
