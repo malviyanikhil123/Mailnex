@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DEV_SECRETS, loadEnv } from "./env";
+import { DEV_SECRETS, PUBLIC_SECRETS, loadEnv } from "./env";
 
 const base = {
   DB_HOST: "localhost",
@@ -47,6 +47,17 @@ describe("loadEnv in production", () => {
 
   it.each(["JWT_SECRET", "JWT_REFRESH_SECRET", "ENCRYPTION_KEY"] as const)("refuses the repo default %s", (key) => {
     expect(() => loadEnv({ ...prod, [key]: DEV_SECRETS[key] })).toThrow(key);
+  });
+
+  it("refuses every placeholder secret from the repo and its history", () => {
+    expect(() => loadEnv({ ...prod, JWT_SECRET: "super_secret_jwt_key_change_in_production" })).toThrow("JWT_SECRET");
+    expect(() => loadEnv({ ...prod, ENCRYPTION_KEY: "Zq3vN8tW1pL6rK0sD4fG7hJ2mB5cX9aE" })).toThrow("ENCRYPTION_KEY");
+    // A placeholder is refused for any of the three, padded or not.
+    for (const value of PUBLIC_SECRETS) {
+      expect(() => loadEnv({ ...prod, JWT_REFRESH_SECRET: ` ${value} ` }), value).toThrow("JWT_REFRESH_SECRET");
+    }
+    expect(PUBLIC_SECRETS).toContain("change-me-access-secret");
+    expect(PUBLIC_SECRETS).toContain("test-jwt-secret-placeholder-0001");
   });
 
   it("refuses missing secrets, which fall back to the defaults", () => {

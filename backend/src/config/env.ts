@@ -8,6 +8,24 @@ export const DEV_SECRETS = {
   ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef",
 } as const;
 
+/**
+ * Every placeholder secret that has appeared in this repo or its git history
+ * (.env.example, docker-compose defaults, test setup, test fixtures, old env.ts
+ * defaults). They are public, so production refuses them for any secret.
+ */
+export const PUBLIC_SECRETS: ReadonlySet<string> = new Set([
+  ...Object.values(DEV_SECRETS),
+  "super_secret_jwt_key_change_in_production",
+  "change-me-access-secret",
+  "change-me-refresh-secret",
+  "32_character_random_hex_string_for_creds",
+  "test-jwt-secret-placeholder-0001",
+  "test-refresh-secret-placeholder1",
+  "Zq3vN8tW1pL6rK0sD4fG7hJ2mB5cX9aE",
+]);
+
+const SECRET_KEYS = ["JWT_SECRET", "JWT_REFRESH_SECRET", "ENCRYPTION_KEY"] as const;
+
 const schema = z.object({
   DB_HOST: z.string().min(1),
   DB_PORT: z.coerce.number().default(5432),
@@ -49,8 +67,8 @@ const schema = z.object({
   // Anyone can read the repo defaults: with them, tokens can be forged for any user
   // and stored app passwords / API keys decrypted. Refuse to boot in production.
   if (e.NODE_ENV !== "production") return;
-  for (const key of ["JWT_SECRET", "JWT_REFRESH_SECRET", "ENCRYPTION_KEY"] as const) {
-    if (e[key] === DEV_SECRETS[key]) {
+  for (const key of SECRET_KEYS) {
+    if (PUBLIC_SECRETS.has(e[key].trim())) {
       ctx.addIssue({ code: "custom", path: [key], message: `${key} must be set to a private value in production` });
     }
   }
