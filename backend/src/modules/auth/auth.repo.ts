@@ -26,7 +26,7 @@ export interface AuthRepo {
    *  the same token can't both win. Returns false when the other one rotated it first. */
   rotateSession(id: string, currentHash: string, next: { tokenHash: string; expiresAt: Date }): Promise<boolean>;
   deleteSession(id: string, userId: number): Promise<void>;
-  /** Deletes every expired session, then the user's least recently used ones beyond `keep`. */
+  /** Deletes the user's expired sessions, then their least recently used ones beyond `keep`. */
   pruneSessions(userId: number, keep: number): Promise<void>;
 }
 
@@ -91,7 +91,7 @@ export const authRepo: AuthRepo = {
   },
 
   async pruneSessions(userId: number, keep: number) {
-    await db.delete(authSessions).where(lt(authSessions.expiresAt, new Date()));
+    await db.delete(authSessions).where(and(eq(authSessions.userId, userId), lt(authSessions.expiresAt, new Date())));
     const newest = db
       .select({ id: authSessions.id })
       .from(authSessions)
