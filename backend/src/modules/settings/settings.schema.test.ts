@@ -29,6 +29,39 @@ describe("senderProfileSchema", () => {
     expect(senderProfileSchema.parse(input)).toEqual(input);
   });
 
+  it("allows the email and website to be emptied", () => {
+    expect(senderProfileSchema.parse({ email: "", website: "  " })).toEqual({ email: "", website: "" });
+  });
+
+  it.each(["bad-email", "a@b", "me @acme.com"])("rejects the email %j with a friendly message", (email) => {
+    const result = senderProfileSchema.safeParse({ email });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0].message).toBe("Enter a valid email address, or leave it empty");
+  });
+
+  it.each(["acme.com", "www.acme.co.uk", "https://acme.com/about?x=1", "http://sub.acme.io", "münchen.de"])(
+    "accepts the website %j",
+    (website) => {
+      expect(senderProfileSchema.safeParse({ website }).success).toBe(true);
+    },
+  );
+
+  it.each(["not a url", "bad-email", "localhost", "javascript:alert(1)", "ftp://acme.com", "https://", "acme."])(
+    "rejects the website %j with a friendly message",
+    (website) => {
+      const result = senderProfileSchema.safeParse({ website });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0].message).toMatch(/^Enter a website like acme\.com/);
+    },
+  );
+
+  it("trims the email and website", () => {
+    expect(senderProfileSchema.parse({ email: " p@acme.com ", website: " acme.com " })).toEqual({
+      email: "p@acme.com",
+      website: "acme.com",
+    });
+  });
+
   it("drops job-seeker fields the form no longer edits", () => {
     expect(senderProfileSchema.parse({ name: "P", role: "Engineer", skills: ["x"] })).toEqual({ name: "P" });
   });

@@ -8,14 +8,43 @@ export const updateGmailSchema = z.object({
 });
 export type UpdateGmailInput = z.infer<typeof updateGmailSchema>;
 
+const emailCheck = z.string().email();
+
+/** A web address with or without http(s)://, e.g. "acme.com" or "https://acme.com/about". */
+export function isWebsite(value: string): boolean {
+  if (/\s/.test(value)) return false;
+  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(value);
+  let url: URL;
+  try {
+    url = new URL(hasScheme ? value : `https://${value}`);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  // A real host name: dot-separated labels ending in a top-level domain (IDNs arrive as xn--).
+  return /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$/i.test(url.hostname);
+}
+
 /** The sender's "My Profile" — editable from the Settings UI. All fields optional so a
  *  partial form submission merges with the existing stored profile. */
 export const senderProfileSchema = z.object({
   name: z.string().max(200).optional(),
   company: z.string().max(200).optional(),
-  email: z.string().max(200).optional(),
+  /** Empty clears it; anything else must be an address. */
+  email: z
+    .string()
+    .trim()
+    .max(200)
+    .refine((v) => v === "" || emailCheck.safeParse(v).success, "Enter a valid email address, or leave it empty")
+    .optional(),
   phone: z.string().max(100).optional(),
-  website: z.string().max(500).optional(),
+  /** Empty clears it; otherwise a URL or a bare domain such as acme.com. */
+  website: z
+    .string()
+    .trim()
+    .max(500)
+    .refine((v) => v === "" || isWebsite(v), "Enter a website like acme.com or https://acme.com, or leave it empty")
+    .optional(),
   linkedin: z.string().max(500).optional(),
   /** Multi-line sign-off; when empty a default is built from name/company/phone/website. */
   signature: z.string().max(2000).optional(),
