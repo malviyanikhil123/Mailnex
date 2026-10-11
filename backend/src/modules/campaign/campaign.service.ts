@@ -14,6 +14,9 @@ export interface CampaignView extends Campaign {
   quotaToday: number;
   nextScheduledAt: Date | null;
   countsByStatus: Record<string, number>;
+  /** True when sending will use AI: it is on for the campaign and the user has a key for
+   *  its provider (or, with no provider picked, any key). Otherwise templates go out as written. */
+  aiActive: boolean;
 }
 
 /** Ownership checks and sender limits, injected so the service is unit-testable. */
@@ -25,6 +28,8 @@ export interface CampaignLookups {
   senderDailyLimit(userId: number, senderAccountId: number | null): Promise<number | null>;
   /** Models a campaign may use with this AI provider, or null when the user has no key for it. */
   aiProviderModels(userId: number, provider: string): Promise<string[] | null>;
+  /** AI providers the user has saved a key for. */
+  aiProvidersConfigured(userId: number): Promise<string[]>;
 }
 
 export const campaignLookups: CampaignLookups = {
@@ -34,6 +39,8 @@ export const campaignLookups: CampaignLookups = {
   senderExists: async (userId, id) => !!(await sendersRepo.get(userId, id)),
   senderDailyLimit: async (userId, id) => (await sendersService.getCreds(userId, id))?.dailyLimit ?? null,
   aiProviderModels: (userId, provider) => aiProvidersService.allowedModels(userId, provider),
+  aiProvidersConfigured: async (userId) =>
+    (await aiProvidersService.list(userId)).filter((p) => p.configured).map((p) => p.provider),
 };
 
 function httpError(statusCode: number, message: string): Error & { statusCode: number } {
@@ -68,14 +75,15 @@ export class CampaignService {
   ) {}
 
   async list(userId: number, now: Date = new Date()): Promise<CampaignView[]> {
-    const rows = await this.repo.list(userId);
-    return Promise.all(rows.map((c) => this.withStats(c, c.importName, c.templateIds, now)));
+    const [rows, aiProviders] = await Promise.all([this.repo.list(userId), this.lookups.aiProvidersConfigured(userId)]);
+    return Promise.all(rows.map((c) => this.withStats(c, c.importName, c.templateIds, aiProviders, now)));
   }
 
   async get(userId: number, id: number, now: Date = new Date()): Promise<CampaignView> {
     const c = await this.mustGet(userId, id);
     const [all] = (await this.repo.list(userId)).filter((r) => r.id === id);
-    return this.withStats(c, all?.importName ?? null, all?.templateIds ?? [], now);
+    const aiProviders = await this.lookups.aiProvidersConfigured(userId);
+    return this.withStats(c, all?.importName ?? null, all?.templateIds ?? [], aiProviders, now);
   }
 
   async create(userId: number, input: CreateCampaignInput): Promise<CampaignView> {
@@ -186,22 +194,42 @@ export class CampaignService {
     const templates = (await this.repo.templateIdsFor([c.id])).get(c.id) ?? [];
     if (templates.length === 0) throw httpError(400, "Pick at least one template before starting the campaign");
     if (c.mode === "TEST" && !c.testEmail) throw httpError(400, "TEST mode needs a test email");
-    if (c.mode !== "DRAFT" && (await this.lookups.senderDailyLimit(c.userId, c.senderAccountId)) == null) {
-      throw httpError(400, "The sender account is not configured or is inactive");
-    }
+    await this.assertSenderUsable(c);
     // Contact send status lives on the contact, so two live campaigns over one import
     // would race for the same people.
     const clash = await this.repo.activeCampaignForImport(c.userId, c.importId, c.id);
     if (clash) throw httpError(409, `"${clash.name}" is already running on this import — stop it first`);
   }
 
-  private async withStats(c: Campaign, importName: string | null, templateIds: number[], now: Date): Promise<CampaignView> {
+  /**
+   * Every mode needs a usable sender: the daily queue is capped by what the sender has
+   * left today, so even a DRAFT campaign without one would run and never generate.
+   */
+  private async assertSenderUsable(c: Campaign): Promise<void> {
+    if ((await this.lookups.senderDailyLimit(c.userId, c.senderAccountId)) != null) return;
+    if (c.senderAccountId == null) {
+      throw httpError(400, "This campaign sends from your primary Gmail, which is not set up yet — add it in Settings or pick another sender");
+    }
+    if (!(await this.lookups.senderExists(c.userId, c.senderAccountId))) {
+      throw httpError(400, "This campaign's sender account no longer exists — pick another sender");
+    }
+    throw httpError(400, "This campaign's sender account is turned off — turn it back on in Senders or pick another sender");
+  }
+
+  private async withStats(
+    c: Campaign,
+    importName: string | null,
+    templateIds: number[],
+    aiProviders: string[],
+    now: Date,
+  ): Promise<CampaignView> {
     const [quotaToday, nextScheduledAt, countsByStatus] = await Promise.all([
       this.repo.sentToday(c.id, now),
       this.repo.nextScheduledAt(c.id),
       this.repo.countByStatus(c),
     ]);
-    return { ...c, importName, templateIds, quotaToday, nextScheduledAt, countsByStatus };
+    const aiActive = c.aiEnabled && (c.aiProvider == null ? aiProviders.length > 0 : aiProviders.includes(c.aiProvider));
+    return { ...c, importName, templateIds, quotaToday, nextScheduledAt, countsByStatus, aiActive };
   }
 }
 

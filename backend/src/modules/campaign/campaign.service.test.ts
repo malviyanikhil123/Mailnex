@@ -58,6 +58,7 @@ function makeLookups(over?: Partial<CampaignLookups>): CampaignLookups {
     senderDailyLimit: async () => 100,
     // Only OpenAI is configured, with a custom saved model on top of the curated ones.
     aiProviderModels: async (_userId, provider) => (provider === "openai" ? ["gpt-5.4-mini", "gpt-5.5", "ft:gpt-custom"] : null),
+    aiProvidersConfigured: async () => ["openai"],
     ...over,
   };
 }
@@ -203,6 +204,66 @@ describe("CampaignService", () => {
     campaign.mode = "LIVE";
     service = new CampaignService(repo, makeLookups({ senderDailyLimit: async () => null }));
     await expect(service.start(userId, campaign.id)).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  describe("start needs a usable sender in every mode", () => {
+    it("refuses a DRAFT campaign on the primary Gmail when none is set up", async () => {
+      service = new CampaignService(repo, makeLookups({ senderDailyLimit: async () => null }));
+      await expect(service.start(userId, campaign.id)).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringMatching(/primary Gmail, which is not set up/),
+      });
+      expect(repo.setState).not.toHaveBeenCalled();
+    });
+
+    it("refuses when the chosen sender account no longer exists", async () => {
+      campaign.senderAccountId = 7;
+      service = new CampaignService(repo, makeLookups({ senderDailyLimit: async () => null, senderExists: async () => false }));
+      await expect(service.start(userId, campaign.id)).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringMatching(/no longer exists/),
+      });
+    });
+
+    it("refuses when the chosen sender account is turned off", async () => {
+      campaign.senderAccountId = 7;
+      service = new CampaignService(repo, makeLookups({ senderDailyLimit: async () => null }));
+      await expect(service.start(userId, campaign.id)).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringMatching(/turned off/),
+      });
+    });
+
+    it("resume checks the sender too", async () => {
+      campaign.state = "PAUSED";
+      service = new CampaignService(repo, makeLookups({ senderDailyLimit: async () => null }));
+      await expect(service.resume(userId, campaign.id)).rejects.toMatchObject({ statusCode: 400 });
+      expect(campaign.state).toBe("PAUSED");
+    });
+  });
+
+  describe("aiActive", () => {
+    it("is true when AI is on and the user has a key for the default provider", async () => {
+      expect((await service.get(userId, campaign.id)).aiActive).toBe(true);
+    });
+
+    it("is false when the user has no AI key at all", async () => {
+      service = new CampaignService(repo, makeLookups({ aiProvidersConfigured: async () => [] }));
+      expect((await service.get(userId, campaign.id)).aiActive).toBe(false);
+      expect((await service.list(userId))[0].aiActive).toBe(false);
+    });
+
+    it("is false when AI is off for the campaign", async () => {
+      campaign.aiEnabled = false;
+      expect((await service.get(userId, campaign.id)).aiActive).toBe(false);
+    });
+
+    it("follows the campaign's own provider when one is picked", async () => {
+      campaign.aiProvider = "anthropic";
+      expect((await service.get(userId, campaign.id)).aiActive).toBe(false);
+      campaign.aiProvider = "openai";
+      expect((await service.list(userId))[0].aiActive).toBe(true);
+    });
   });
 
   it("pause sets PAUSED", async () => {
