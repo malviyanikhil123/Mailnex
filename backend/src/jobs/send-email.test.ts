@@ -20,6 +20,7 @@ function makeDeps(overrides?: {
   aiInstructions?: string | null;
   profileVars?: Record<string, string>;
   customFields?: Record<string, unknown>;
+  firstName?: string | null;
 }): { deps: SendEmailDeps; logs: LogInput[]; send: ReturnType<typeof vi.fn>; campaign: any } {
   const logs: LogInput[] = [];
   const send = vi.fn(overrides?.sendImpl ?? (async () => ({ messageId: "mid-1" })));
@@ -30,6 +31,7 @@ function makeDeps(overrides?: {
       companyName: "Acme",
       location: "Berlin",
       email: "hr@acme.com",
+      firstName: overrides?.firstName,
       customFields: overrides?.customFields ?? {},
       status: "PENDING",
       retryCount: overrides?.retryCount ?? 0,
@@ -310,6 +312,14 @@ describe("sendEmailJob", () => {
     expect(deps.personalize).toHaveBeenCalledWith(
       expect.objectContaining({ ai, language: "Hindi", instructions: "Mention the offer" }),
     );
+  });
+
+  it("passes the contact and the sender (not a candidate) to personalization", async () => {
+    const { deps } = makeDeps({ firstName: "Priya" });
+    await sendEmailJob(1, deps);
+    expect(deps.personalize).toHaveBeenCalledWith(expect.objectContaining({
+      vars: { company: "Acme", location: "Berlin", firstName: "Priya", sender: { name: "Nikhil", email: "n@x.dev" } },
+    }));
   });
 
   it("resolves the campaign's own provider and model, null meaning the user's default", async () => {

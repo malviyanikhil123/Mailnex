@@ -20,7 +20,7 @@ const BASE_INPUT = {
   vars: {
     company: "Acme Corp",
     location: "New York",
-    candidate: { name: "Alice Smith", email: "alice@example.com" },
+    sender: { name: "Alice Smith", email: "alice@example.com" },
   },
 };
 

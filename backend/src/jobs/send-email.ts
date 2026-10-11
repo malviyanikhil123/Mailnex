@@ -86,7 +86,7 @@ export interface SettingsPort {
 export interface PersonalizeFn {
   (input: {
     template: { subject: string; body: string };
-    vars: { company: string; location: string; candidate: { name: string; email?: string } };
+    vars: { company: string; location: string; firstName?: string; sender: { name: string; email?: string } };
     ai?: AiModelConfig;
     language?: string;
     instructions?: string;
@@ -389,7 +389,8 @@ async function renderTextEmail(
     vars: {
       company: contact.companyName ?? "",
       location: contact.location ?? "",
-      candidate: { name: profile.name ?? "", email: profile.email },
+      firstName: contact.firstName ?? "",
+      sender: { name: profile.name ?? "", email: profile.email },
     },
     ai: ai ?? undefined,
     language: settings?.language,

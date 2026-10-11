@@ -39,9 +39,13 @@ import {
 // ---------------------------------------------------------------------------
 
 export interface PersonalizeVars {
+  /** The contact's company and location; blank when unknown. */
   company: string;
   location: string;
-  candidate: { name: string; email?: string };
+  /** The contact's first name; blank or absent when unknown. */
+  firstName?: string;
+  /** Who the email is from ("My Profile"). */
+  sender: { name: string; email?: string };
 }
 
 export interface PersonalizeInput {
@@ -79,8 +83,9 @@ function interpolateTemplate(
   const flat: Record<string, string> = {
     company: vars.company,
     location: vars.location,
-    candidateName: vars.candidate.name,
-    ...(vars.candidate.email ? { candidateEmail: vars.candidate.email } : {}),
+    // Legacy variable names from the job-seeker templates.
+    candidateName: vars.sender.name,
+    ...(vars.sender.email ? { candidateEmail: vars.sender.email } : {}),
   };
   return {
     subject: interpolate(template.subject, flat),
@@ -112,7 +117,8 @@ export async function personalize(
       body: template.body,
       company: vars.company,
       location: vars.location,
-      candidateName: vars.candidate.name,
+      firstName: vars.firstName,
+      senderName: vars.sender.name,
       language: input.language,
       instructions: input.instructions,
     });
