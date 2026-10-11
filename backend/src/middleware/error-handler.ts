@@ -1,13 +1,19 @@
 import type { FastifyInstance, FastifyError } from "fastify";
-import { ZodError } from "zod";
+import { ZodError, defaultErrorMap } from "zod";
 import { logger } from "../utils/logger.js";
 
-/** First issue as one line, prefixed with its field ("email: Enter a valid email") so a
- *  bare "Required" in a toast still says what is missing. */
+/**
+ * First issue as one line for a toast. A message written for the user ("This key is
+ * already a built-in variable") is shown as it is. Zod's own generic messages get the
+ * field name in front ("email: Required"), so the toast still says what is missing —
+ * the field only, never the raw path ("fields.0.key").
+ */
 export function zodErrorMessage(err: ZodError): string {
   const issue = err.issues[0];
   if (!issue) return "Invalid request";
-  return issue.path.length ? `${issue.path.join(".")}: ${issue.message}` : issue.message;
+  const generic = issue.message === defaultErrorMap(issue, { defaultError: issue.message, data: undefined }).message;
+  const field = [...issue.path].reverse().find((p): p is string => typeof p === "string");
+  return generic && field ? `${field}: ${issue.message}` : issue.message;
 }
 
 export function registerErrorHandler(app: FastifyInstance) {

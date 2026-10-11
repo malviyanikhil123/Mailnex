@@ -37,13 +37,35 @@ function errorOf(schema: z.ZodTypeAny, value: unknown) {
 }
 
 describe("zodErrorMessage", () => {
-  it("prefixes the first issue with its field", () => {
+  it("prefixes zod's generic messages with their field", () => {
     expect(zodErrorMessage(errorOf(z.object({ email: z.string() }), {}))).toBe("email: Required");
   });
 
-  it("joins nested paths", () => {
+  it("names only the field of a nested generic message, not the raw path", () => {
+    const schema = z.object({ fields: z.array(z.object({ key: z.string() })) });
+    expect(zodErrorMessage(errorOf(schema, { fields: [{}] }))).toBe("key: Required");
+  });
+
+  it("shows a message written for the user as it is, without the path", () => {
     const schema = z.object({ fields: z.array(z.object({ key: z.string().min(1, "Key is required") })) });
-    expect(zodErrorMessage(errorOf(schema, { fields: [{ key: "" }] }))).toBe("fields.0.key: Key is required");
+    expect(zodErrorMessage(errorOf(schema, { fields: [{ key: "" }] }))).toBe("Key is required");
+    const refined = z.object({ key: z.string().refine((k) => k !== "email", "This key is already a built-in variable") });
+    expect(zodErrorMessage(errorOf(refined, { key: "email" }))).toBe("This key is already a built-in variable");
+  });
+
+  it("keeps every issue with its path in the response details", async () => {
+    const schema = z.object({ email: z.string().email("Enter a valid email"), name: z.string() });
+    const app = Fastify({ logger: false });
+    registerErrorHandler(app);
+    app.post("/", async (req) => schema.parse(req.body));
+    const res = await app.inject({ method: "POST", url: "/", payload: { email: "nope" } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({
+      error: "ValidationError",
+      message: "Enter a valid email",
+      details: { formErrors: [], fieldErrors: { email: ["Enter a valid email"], name: ["Required"] } },
+    });
+    await app.close();
   });
 
   it("leaves top-level issues unprefixed", () => {
