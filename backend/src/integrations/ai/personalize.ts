@@ -13,6 +13,9 @@
  *  - On ANY error (model throws, network error, timeout, invalid JSON, Zod
  *    validation failure, empty response) → fallback to the interpolated
  *    template, aiUsed: false. Never throws out of personalize().
+ *  - The same fallback applies when the model's text holds a link that the
+ *    template does not: contact fields reach the prompt, so a crafted company
+ *    name must not be able to make the model plant a URL in the email.
  *
  * JSON is asked for in the prompt rather than through a provider's structured
  * output mode, because not every model on every provider supports the latter.
@@ -71,6 +74,29 @@ const personalizationSchema = z.object({
   subject: z.string().trim().min(1),
   body: z.string().trim().min(1),
 });
+
+// ---------------------------------------------------------------------------
+// Link check
+// ---------------------------------------------------------------------------
+
+/** http(s) and www. links, ended by whitespace, quotes or angle brackets. */
+const LINK = /(?:https?:\/\/|www\.)[^\s"'<>]+/gi;
+
+/** The links in a text, lower-cased and without trailing sentence punctuation. */
+export function linksIn(text: string): string[] {
+  return (text.match(LINK) ?? []).map((l) => l.replace(/[.,;:!?)\]}*]+$/, "").toLowerCase());
+}
+
+/** Links in the model's output that the (already filled-in) template does not contain. */
+export function unexpectedLinks(
+  output: { subject: string; body: string },
+  template: { subject: string; body: string },
+): string[] {
+  const allowed = new Set(linksIn(`${template.subject}
+${template.body}`));
+  return linksIn(`${output.subject}
+${output.body}`).filter((l) => !allowed.has(l));
+}
 
 // ---------------------------------------------------------------------------
 // Interpolation helper
@@ -162,6 +188,16 @@ export async function personalize(
       logger.warn(
         { reason: "zod_validation_failed", ...where, errors: validated.error.issues },
         "AI JSON failed schema validation — falling back to interpolated template",
+      );
+      const { subject, body } = interpolateTemplate(template, vars);
+      return { subject, body, aiUsed: false };
+    }
+
+    const unexpected = unexpectedLinks(validated.data, interpolateTemplate(template, vars));
+    if (unexpected.length > 0) {
+      logger.warn(
+        { reason: "unexpected_link", ...where, links: unexpected.slice(0, 5) },
+        "AI output added a link the template does not have — falling back to interpolated template",
       );
       const { subject, body } = interpolateTemplate(template, vars);
       return { subject, body, aiUsed: false };

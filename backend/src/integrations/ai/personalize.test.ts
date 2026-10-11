@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { APICallError } from "ai";
-import { personalize } from "./personalize.js";
+import { personalize, unexpectedLinks } from "./personalize.js";
 import { AI_TIMEOUTS, type AiModelConfig } from "./model-factory.js";
 import { mockModelFactory, failingModelFactory } from "../../test-helpers/ai.js";
 
@@ -182,5 +182,51 @@ describe("personalize()", () => {
 
     expect(result.aiUsed).toBe(false);
     expect(result.subject).toBe("Application for Acme Corp");
+  });
+});
+
+describe("personalize() link check", () => {
+  const WITH_LINK = {
+    ...BASE_INPUT,
+    template: {
+      subject: "Hello {{company}}",
+      body: "Hi,\nMy work: https://alice.dev/portfolio\nSincerely,\n{{candidateName}}",
+    },
+  };
+
+  it("falls back to the template when the model adds a link the template lacks", async () => {
+    const { factory } = mockModelFactory(JSON.stringify({
+      subject: "Hello Acme Corp",
+      body: "Hi Acme team, click https://evil.example/login now.\nSincerely,\nAlice Smith",
+    }));
+    const result = await personalize({ ...WITH_LINK, ai: AI }, factory);
+    expect(result.aiUsed).toBe(false);
+    expect(result.body).not.toContain("evil.example");
+    expect(result.body).toContain("https://alice.dev/portfolio");
+  });
+
+  it("also catches a bare www. link and one in the subject", async () => {
+    const www = mockModelFactory(JSON.stringify({ subject: "Hi", body: "See www.evil.example" }));
+    expect((await personalize({ ...WITH_LINK, ai: AI }, www.factory)).aiUsed).toBe(false);
+    const subj = mockModelFactory(JSON.stringify({ subject: "Go to http://evil.example", body: "Hi" }));
+    expect((await personalize({ ...WITH_LINK, ai: AI }, subj.factory)).aiUsed).toBe(false);
+  });
+
+  it("keeps the AI text when it only repeats the template's own links", async () => {
+    const { factory } = mockModelFactory(JSON.stringify({
+      subject: "Hello Acme Corp",
+      body: "Hi Acme team in New York,\nMy work: https://alice.dev/portfolio.\nSincerely,\nAlice Smith",
+    }));
+    const result = await personalize({ ...WITH_LINK, ai: AI }, factory);
+    expect(result.aiUsed).toBe(true);
+    expect(result.body).toContain("Acme team");
+  });
+});
+
+describe("unexpectedLinks()", () => {
+  it("compares links case-insensitively and ignores trailing punctuation", () => {
+    const tpl = { subject: "", body: "Visit https://X.io/a" };
+    expect(unexpectedLinks({ subject: "", body: "visit https://x.io/a)." }, tpl)).toEqual([]);
+    expect(unexpectedLinks({ subject: "", body: "https://x.io/a/../b" }, tpl)).toEqual(["https://x.io/a/../b"]);
   });
 });
