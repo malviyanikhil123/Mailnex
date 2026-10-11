@@ -79,11 +79,14 @@ export function authRateLimit(scope: string) {
 }
 
 /**
- * Counts failed requests per key in a fixed window, in memory (at most `maxKeys`, oldest
+ * Counts attempts per key in a fixed window, in memory (at most `maxKeys`, oldest
  * dropped). @fastify/rate-limit runs only one of its limiters per request (a shared
- * "already ran" flag), so a route that needs a second bucket uses this one: `preHandler`
- * rejects once a key has `max` failures, `onResponse` counts 4xx/5xx answers (not its own
- * 429s) and clears the key on success, so the real owner logging in starts over.
+ * "already ran" flag), so a route that needs a second bucket uses this one.
+ *
+ * `preHandler` counts the attempt up front (so a burst of parallel requests cannot all
+ * slip in before any is counted) and rejects once a key has `max`. `onResponse` clears
+ * the key when the request succeeds, and takes the attempt back when another limiter
+ * answered 429 before the handler ran — so only failed attempts stay counted.
  */
 export function failureLimiter(opts: {
   max: number;
@@ -95,44 +98,36 @@ export function failureLimiter(opts: {
 }): { preHandler: preHandlerAsyncHookHandler; onResponse: onResponseAsyncHookHandler } {
   const { max, windowMs, key, message, maxKeys = 100_000, now = Date.now } = opts;
   const windows = new Map<string, { count: number; resetAt: number }>();
-
-  const live = (k: string, t: number) => {
-    const w = windows.get(k);
-    if (w && w.resetAt <= t) {
-      windows.delete(k);
-      return undefined;
-    }
-    return w;
-  };
+  /** Requests this limiter counted, with the window they were counted in. */
+  const counted = new WeakMap<FastifyRequest, { k: string; w: { count: number; resetAt: number } }>();
 
   return {
     preHandler: async (req, reply) => {
       const k = key(req);
       if (k === null) return;
       const t = now();
-      const w = live(k, t);
-      if (w && w.count >= max) {
-        reply.header("retry-after", Math.ceil((w.resetAt - t) / 1000));
-        throw Object.assign(new Error(message), { statusCode: 429, name: "TooManyRequests" });
-      }
-    },
-    onResponse: async (req, reply) => {
-      const k = key(req);
-      if (k === null) return;
-      const status = reply.statusCode;
-      if (status < 400) {
+      let w = windows.get(k);
+      if (!w || w.resetAt <= t) {
         windows.delete(k);
-        return;
-      }
-      if (status === 429) return;
-      const t = now();
-      let w = live(k, t);
-      if (!w) {
         w = { count: 0, resetAt: t + windowMs };
         windows.set(k, w);
         if (windows.size > maxKeys) windows.delete(windows.keys().next().value!);
       }
+      if (w.count >= max) {
+        reply.header("retry-after", Math.ceil((w.resetAt - t) / 1000));
+        throw Object.assign(new Error(message), { statusCode: 429, name: "TooManyRequests" });
+      }
       w.count++;
+      counted.set(req, { k, w });
+    },
+    onResponse: async (req, reply) => {
+      const entry = counted.get(req);
+      if (!entry) return;
+      counted.delete(req);
+      // Only touch the window this request was counted in, not a newer one.
+      if (windows.get(entry.k) !== entry.w) return;
+      if (reply.statusCode < 400) windows.delete(entry.k);
+      else if (reply.statusCode === 429) entry.w.count--;
     },
   };
 }

@@ -121,42 +121,55 @@ describe("failureLimiter", () => {
       now: () => t,
     });
     type Hook = (req: unknown, reply: unknown) => Promise<void>;
-    const check = (k: string) => (limiter.preHandler as unknown as Hook)({ body: { k } }, { header: () => undefined });
-    const answer = (k: string, statusCode: number) =>
-      (limiter.onResponse as unknown as Hook)({ body: { k } }, { statusCode });
-    const fail = async (k: string) => {
-      await check(k);
-      await answer(k, 401);
+    const reply = { header: () => reply };
+    /** One request: runs the check, returns a function that sends its answer. */
+    const start = async (k: string) => {
+      const req = { body: { k } };
+      await (limiter.preHandler as unknown as Hook)(req, reply);
+      return (statusCode: number) => (limiter.onResponse as unknown as Hook)(req, { statusCode });
     };
-    return { check, answer, fail, setTime: (v: number) => { t = v; } };
+    const check = async (k: string) => {
+      await (await start(k))(200);
+    };
+    const answer = async (k: string, statusCode: number) => {
+      await (await start(k))(statusCode);
+    };
+    const fail = (k: string) => answer(k, 401);
+    return { start, check, answer, fail, setTime: (v: number) => { t = v; } };
   }
 
   it("blocks after max failures until the window ends", async () => {
-    const { check, fail, setTime } = await setup();
+    const { start, fail, setTime } = await setup();
     await fail("a");
     await fail("a");
-    await expect(check("a")).rejects.toMatchObject({ statusCode: 429, message: "slow down" });
+    await expect(start("a")).rejects.toMatchObject({ statusCode: 429, message: "slow down" });
     setTime(1000);
-    await expect(check("a")).resolves.toBeUndefined();
+    await expect(start("a")).resolves.toBeTypeOf("function");
   });
 
-  it("does not count successes or its own 429s, and a success clears the failures", async () => {
-    const { check, answer, fail } = await setup();
+  it("counts parallel attempts before any of them is answered", async () => {
+    const { start } = await setup();
+    await start("a");
+    await start("a");
+    await expect(start("a")).rejects.toMatchObject({ statusCode: 429 });
+  });
+
+  it("a success clears the failures, and another limiter's 429 is not counted", async () => {
+    const { start, answer, fail } = await setup();
     await fail("a");
     await answer("a", 200);
     await fail("a");
     await answer("a", 429);
-    await expect(check("a")).resolves.toBeUndefined();
-    await fail("a");
-    await expect(check("a")).rejects.toMatchObject({ statusCode: 429 });
+    await expect(start("a")).resolves.toBeTypeOf("function");
+    await expect(start("a")).rejects.toMatchObject({ statusCode: 429 });
   });
 
   it("drops the oldest key past maxKeys", async () => {
-    const { check, fail } = await setup();
+    const { start, fail } = await setup();
     await fail("a");
     await fail("a");
     await fail("b");
     await fail("c");
-    await expect(check("a")).resolves.toBeUndefined();
+    await expect(start("a")).resolves.toBeTypeOf("function");
   });
 });
