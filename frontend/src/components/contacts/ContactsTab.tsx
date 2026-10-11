@@ -5,7 +5,7 @@ import { Button, Card, Input, Spinner, ErrorState, StatusBadge } from "../ui/pri
 import { toast } from "../../store/toast";
 import type { Contact, ContactStatus } from "../../types/api";
 import { contactsToCsv, downloadCsv } from "./csv";
-import { Pager, contactName, selectClass, tableHeadClass, tableRowClass, varName } from "./shared";
+import { Pager, contactName, filterSelectClass, tableHeadClass, tableRowClass, varName } from "./shared";
 
 const STATUSES: ContactStatus[] = ["PENDING", "PROCESSING", "SENT", "FAILED", "BOUNCED", "PAUSED"];
 const COLUMNS = 8;
@@ -70,7 +70,7 @@ export default function ContactsTab({
             setStatus(e.target.value);
             setPage(1);
           }}
-          className={selectClass}
+          className={filterSelectClass}
         >
           <option value="">All statuses</option>
           {STATUSES.map((s) => (
@@ -86,7 +86,7 @@ export default function ContactsTab({
             onImportChange(e.target.value ? +e.target.value : undefined);
             setPage(1);
           }}
-          className={selectClass}
+          className={filterSelectClass}
         >
           <option value="">All imports</option>
           {imports.data?.map((i) => (

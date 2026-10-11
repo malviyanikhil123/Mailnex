@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { contactsApi, type ImportProgress, type ListImportsParams } from "../../services/contacts.api";
 import { Button, Card, Input, Spinner, ErrorState } from "../ui/primitives";
 import { toast } from "../../store/toast";
-import { Pager, selectClass, tableHeadClass, tableRowClass, varName } from "./shared";
+import { Pager, filterSelectClass, tableHeadClass, tableRowClass, varName } from "./shared";
 
 const RECOGNIZED_COLUMNS = [
   "Email",
@@ -64,7 +64,7 @@ export default function ImportsTab({ onViewContacts }: { onViewContacts: (import
               setSort(e.target.value as typeof sort);
               setPage(1);
             }}
-            className={selectClass}
+            className={filterSelectClass}
           >
             <option value="newest">Newest first</option>
             <option value="oldest">Oldest first</option>

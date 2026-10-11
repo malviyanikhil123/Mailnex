@@ -2,7 +2,7 @@ import { Button, selectBaseClass } from "../ui/primitives";
 import type { Contact } from "../../types/api";
 
 /** Filter selects size to their content (they sit in a row of filters). */
-export const selectClass = `px-3 py-2 text-sm ${selectBaseClass}`;
+export const filterSelectClass = `px-3 py-2 text-sm ${selectBaseClass}`;
 
 export const tableHeadClass = "text-left text-gray-700 text-xs uppercase bg-[#BAE6FD] dark:bg-gray-800/50";
 
