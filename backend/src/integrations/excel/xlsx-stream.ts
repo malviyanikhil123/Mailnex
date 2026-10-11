@@ -19,10 +19,11 @@
  *    the read there (SheetTooLargeError), the rows so far are kept;
  *  - at most MAX_SHEETS distinct worksheet parts are read, each part once, however
  *    many sheets workbook.xml lists;
- *  - before the XML parser, a byte-level guard fails the read on a text or tag run
- *    longer than MAX_TEXT_RUN_BYTES (the parser would buffer it whole) and on a row
- *    with more than MAX_CELLS_PER_ROW cells holding content (or MAX_CELL_TAGS_PER_ROW
- *    cells of any kind, Excel's own column limit).
+ *  - before the XML parser, a byte-level guard (xmlGuard) fails the read on
+ *    comments, CDATA and processing instructions, on a text or tag run longer than
+ *    MAX_TEXT_RUN_BYTES (the parser would buffer it whole), on a cell or shared
+ *    string over MAX_ITEM_BYTES, and on a row with more than MAX_CELLS_PER_ROW cells
+ *    holding content (or MAX_CELL_TAGS_PER_ROW cells of any kind, Excel's limit).
  *
  * The parse runs on the main thread: with these caps its memory is bounded, so a
  * worker thread is not used.
@@ -49,8 +50,13 @@ export const XLSX_LIMITS = {
   MAX_TOTAL_BYTES: 256 * MB,
   /** Distinct worksheet parts read. */
   MAX_SHEETS: 10,
-  /** One run of text or one tag, i.e. roughly one cell value (32K characters, escaped). */
-  MAX_TEXT_RUN_BYTES: 128 * 1024,
+  /**
+   * One run of text or one tag: Excel's longest cell (32,767 characters) at the worst
+   * encoding, 7 bytes a character (Excel's "_x000D_" escapes; ExcelJS's "&quot;" is 6).
+   */
+  MAX_TEXT_RUN_BYTES: 32_767 * 7,
+  /** One cell or shared string with all its markup (rich-text runs, formula, value). */
+  MAX_ITEM_BYTES: 2 * MB,
   /** Cells with content in one row. */
   MAX_CELLS_PER_ROW: 1000,
   /** Cells of any kind (empty styled ones too) in one row: Excel's column limit. */
@@ -165,14 +171,35 @@ function isNameByte(b: number): boolean {
     b === 0x3a || b === 0x5f || b === 0x2d || b === 0x2e || b === SLASH;
 }
 
+const BANG = 0x21; // !
+const QUESTION = 0x3f; // ?
+
+/** Elements whose whole content, inner markup included, is one item: a cell, a shared string. */
+const ITEM_TAGS = new Set(["c", "si"]);
+
 /**
  * A byte-level look at worksheet / shared-strings XML before the parser sees it: the
  * parser keeps a whole text node or tag in memory, and ExcelJS keeps every cell of a
- * row, so both are bounded here. "<" and ">" are ASCII, so UTF-8 needs no decoding.
+ * row, so both are bounded here. "<" and ">" are ASCII, so UTF-8 needs no decoding,
+ * and in well-formed XML "<" only ever starts markup (attribute values can't hold it).
+ *
+ *  - Comments, CDATA, DOCTYPE and processing instructions ("<!", and "<?" after the
+ *    prolog) fail the read: Excel never writes them in these parts, and they could
+ *    hide a fake "<row>" from this count or split a huge text into short runs.
+ *  - A text or tag run is capped (MAX_TEXT_RUN_BYTES), and so is one item, i.e. a
+ *    cell or shared string with all its inner markup (MAX_ITEM_BYTES).
+ *  - Cells per row are capped (MAX_CELLS_PER_ROW with content, MAX_CELL_TAGS_PER_ROW
+ *    in all).
  */
-export function xmlGuard(limits: Pick<XlsxLimits, "MAX_TEXT_RUN_BYTES" | "MAX_CELLS_PER_ROW" | "MAX_CELL_TAGS_PER_ROW">): Transform {
+export function xmlGuard(
+  limits: Pick<XlsxLimits, "MAX_TEXT_RUN_BYTES" | "MAX_ITEM_BYTES" | "MAX_CELLS_PER_ROW" | "MAX_CELL_TAGS_PER_ROW">,
+): Transform {
   let inTag = false;
+  let afterLt = false;
+  let rootSeen = false;
   let run = 0;
+  let item = 0;
+  let inItem = false;
   let naming = false;
   let name = "";
   let prev = 0;
@@ -180,10 +207,20 @@ export function xmlGuard(limits: Pick<XlsxLimits, "MAX_TEXT_RUN_BYTES" | "MAX_CE
   let filled = 0;
   return new Transform({
     transform(chunk: Buffer, _encoding, callback) {
+      const fail = (message: string) => callback(new XlsxFormatError(message));
       for (let i = 0; i < chunk.length; i++) {
         const b = chunk[i];
+        if (inItem && ++item > limits.MAX_ITEM_BYTES) return fail("A cell is too large");
+        if (afterLt) {
+          afterLt = false;
+          if (b === BANG || (b === QUESTION && rootSeen)) {
+            return fail("Comments, CDATA and processing instructions are not allowed in a worksheet");
+          }
+          if (b !== QUESTION && b !== SLASH) rootSeen = true;
+        }
         if (b === LT) {
           inTag = true;
+          afterLt = true;
           naming = true;
           name = "";
           run = 0;
@@ -191,8 +228,14 @@ export function xmlGuard(limits: Pick<XlsxLimits, "MAX_TEXT_RUN_BYTES" | "MAX_CE
           inTag = false;
           naming = false;
           run = 0;
+          const closing = name.startsWith("/");
+          const tag = name.slice(name.lastIndexOf(":") + 1).replace(/^\//, "");
+          if (ITEM_TAGS.has(tag)) {
+            inItem = !closing && prev !== SLASH;
+            item = 0;
+          }
           // Closing tags ("</c>", "</x:c>") are not counted.
-          const local = name.startsWith("/") ? "" : name.slice(name.lastIndexOf(":") + 1);
+          const local = closing ? "" : tag;
           if (local === "row") {
             cells = 0;
             filled = 0;
@@ -200,8 +243,7 @@ export function xmlGuard(limits: Pick<XlsxLimits, "MAX_TEXT_RUN_BYTES" | "MAX_CE
             cells++;
             if (prev !== SLASH) filled++;
             if (filled > limits.MAX_CELLS_PER_ROW || cells > limits.MAX_CELL_TAGS_PER_ROW) {
-              callback(new XlsxFormatError(`A row has more than ${limits.MAX_CELLS_PER_ROW} cells`));
-              return;
+              return fail(`A row has more than ${limits.MAX_CELLS_PER_ROW} cells`);
             }
           }
         } else {
@@ -209,10 +251,7 @@ export function xmlGuard(limits: Pick<XlsxLimits, "MAX_TEXT_RUN_BYTES" | "MAX_CE
             if (isNameByte(b) && name.length < 32) name += String.fromCharCode(b);
             else naming = false;
           }
-          if (++run > limits.MAX_TEXT_RUN_BYTES) {
-            callback(new XlsxFormatError("A cell is too large"));
-            return;
-          }
+          if (++run > limits.MAX_TEXT_RUN_BYTES) return fail("A cell is too large");
         }
         prev = b;
       }

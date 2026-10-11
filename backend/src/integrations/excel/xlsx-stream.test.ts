@@ -259,9 +259,9 @@ describe("workbook-wide limits", () => {
 });
 
 describe("xmlGuard", () => {
-  const limits = { MAX_TEXT_RUN_BYTES: 10, MAX_CELLS_PER_ROW: 2, MAX_CELL_TAGS_PER_ROW: 3 };
-  const feed = async (chunks: string[]) => {
-    const guard = xmlGuard(limits);
+  const limits = { MAX_TEXT_RUN_BYTES: 10, MAX_ITEM_BYTES: 1000, MAX_CELLS_PER_ROW: 2, MAX_CELL_TAGS_PER_ROW: 3 };
+  const feed = async (chunks: string[], use = limits) => {
+    const guard = xmlGuard(use);
     const out: Buffer[] = [];
     guard.on("data", (c: Buffer) => out.push(c));
     const done = new Promise<void>((resolve, reject) => {
@@ -286,6 +286,57 @@ describe("xmlGuard", () => {
 
   it("fails on a long run of text even when it arrives in pieces", async () => {
     await expect(feed(["<t>12345", "678901</t>"])).rejects.toThrow("A cell is too large");
+  });
+
+  it("allows the XML prolog", async () => {
+    const xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<row><c>1</c></row>';
+    await expect(feed([xml], { ...limits, MAX_TEXT_RUN_BYTES: 1000 })).resolves.toBe(xml);
+  });
+
+  it("refuses a comment that would hide a fake <row> from the cell count", async () => {
+    await expect(feed(["<row><c>1</c><c>2</c><!--<row>--><c>3</c></row>"])).rejects.toThrow(/Comments, CDATA/);
+    // Split right after the "<".
+    await expect(feed(["<row><c>1</c><", "!--x--></row>"])).rejects.toThrow(/Comments, CDATA/);
+  });
+
+  it("refuses CDATA, DOCTYPE and processing instructions after the prolog", async () => {
+    await expect(feed(["<row><c><v><![CDATA[<row>]]></v></c></row>"])).rejects.toThrow(/Comments, CDATA/);
+    await expect(feed(["<!DOCTYPE x><row/>"])).rejects.toThrow(/Comments, CDATA/);
+    await expect(feed(["<row><?pi data?></row>"])).rejects.toThrow(/Comments, CDATA/);
+  });
+
+  it("caps a cell with all its inner markup, so short runs can't add up", async () => {
+    const small = { ...limits, MAX_TEXT_RUN_BYTES: 100, MAX_ITEM_BYTES: 60 };
+    const guard = async (xml: string) => {
+      const g = xmlGuard(small);
+      g.resume();
+      const done = new Promise<void>((resolve, reject) => { g.on("end", resolve); g.on("error", reject); });
+      g.end(Buffer.from(xml));
+      await done;
+    };
+    const runs = "<t>abcdefgh</t>".repeat(6); // each run is short; together 90 bytes
+    await expect(guard(`<c><is>${runs}</is></c>`)).rejects.toThrow("A cell is too large");
+    await expect(guard(`<si>${runs}</si>`)).rejects.toThrow("A cell is too large");
+    // Markup outside cells (e.g. merge cells after the sheet data) is not an item.
+    await expect(guard(`<c><v>1</v></c><mergeCells>${'<mergeCell ref="A1:B2"/>'.repeat(10)}</mergeCells>`)).resolves.toBeUndefined();
+  });
+});
+
+describe("longest Excel cells", () => {
+  it("reads 32,767-character cells however they are encoded", async () => {
+    const values = {
+      emoji: "\u{1F600}".repeat(16_383) + "a", // 4 UTF-8 bytes per emoji
+      amp: "&".repeat(32_767), // "&amp;"
+      apos: "'".repeat(32_767), // "&apos;", ExcelJS's longest escape
+    };
+    for (const v of Object.values(values)) expect(v).toHaveLength(32_767);
+    const file = await workbook([[["email", "emoji", "amp", "apos"], ["a@x.io", values.emoji, values.amp, values.apos]]]);
+    const rows: { email: string; customFields: Record<string, string> }[] = [];
+    await parseContactsXlsx(file, (r) => rows.push(r));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].email).toBe("a@x.io");
+    expect(rows[0].customFields.amp).toBe("&".repeat(IMPORT_LIMITS.MAX_VALUE_LENGTH));
+    expect(rows[0].customFields.emoji.startsWith("\u{1F600}")).toBe(true);
   });
 });
 
