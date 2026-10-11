@@ -55,7 +55,15 @@ export function GenerateHtmlDialog({ onClose, onGenerated }: { onClose: () => vo
   });
 
   return (
-    <Modal title="Generate an HTML email with AI" onClose={onClose}>
+    <Modal
+      title="Generate an HTML email with AI"
+      onClose={onClose}
+      confirmClose={
+        generate.isPending
+          ? "The design is still being generated. Close and discard it?"
+          : description.trim() !== "" && "Discard your description?"
+      }
+    >
       {providers.isLoading ? (
         <Spinner />
       ) : providers.isError ? (

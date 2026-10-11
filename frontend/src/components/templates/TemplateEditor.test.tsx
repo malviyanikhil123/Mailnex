@@ -178,8 +178,12 @@ describe("TemplateEditor", () => {
       fireEvent.click(screen.getByRole("button", { name: "Generate design" }));
       await waitFor(() => expect(templates.generateHtml).toHaveBeenCalled());
 
+      // Closing while the AI is working asks first.
+      const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
       const dialogs = screen.getAllByRole("button", { name: "Close dialog" });
       fireEvent.click(dialogs[dialogs.length - 1]);
+      expect(confirm).toHaveBeenCalledTimes(1);
+      confirm.mockRestore();
       expect(screen.queryByLabelText("What should the email be about?")).not.toBeInTheDocument();
 
       resolve({ html: "<p>Late design</p>", subject: "Late" });
@@ -198,5 +202,24 @@ describe("TemplateEditor", () => {
       const alert = await screen.findByRole("alert");
       expect(within(alert).getByText("OpenAI is rate limiting your key")).toBeInTheDocument();
     });
+  });
+
+  it("asks before the backdrop or Escape throw away unsaved changes", () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const { onClose } = renderEditor(template());
+    const backdrop = screen.getByRole("dialog", { name: "Edit template" }).parentElement!;
+
+    fireEvent.mouseDown(backdrop);
+    fireEvent.click(backdrop);
+    expect(confirm).not.toHaveBeenCalled(); // nothing changed yet
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Launch v2" } });
+    fireEvent.mouseDown(backdrop);
+    fireEvent.click(backdrop);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    confirm.mockRestore();
   });
 });

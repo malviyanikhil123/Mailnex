@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { contactsApi } from "../../services/contacts.api";
 import { templatesApi } from "../../services/templates.api";
@@ -35,15 +35,21 @@ export function CampaignForm({
   saving,
   onSubmit,
   onCancel,
+  onDirtyChange,
 }: {
   initial?: Campaign;
   saving: boolean;
   onSubmit: (input: CampaignInput) => void;
   onCancel: () => void;
+  /** Told whether the form differs from what it opened with (to confirm before discarding). */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [v, setV] = useState<CampaignInput>(() => (initial ? pickInput(initial) : EMPTY));
   const set = <K extends keyof CampaignInput>(k: K, val: CampaignInput[K]) => setV((p) => ({ ...p, [k]: val }));
   const locked = initial?.state === "RUNNING" || initial?.state === "PAUSED";
+  const [start] = useState(v);
+  const dirty = JSON.stringify(v) !== JSON.stringify(start);
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
   const imports = useQuery({ queryKey: ["imports"], queryFn: contactsApi.imports });
   const templates = useQuery({ queryKey: ["templates"], queryFn: templatesApi.list });

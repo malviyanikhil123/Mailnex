@@ -62,6 +62,7 @@ export function TemplateEditor({
   const lastFocused = useRef<"subject" | "body">("body");
 
   const isHtml = form.format === "html";
+  const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(initialForm(template)), [form, template]);
   const vars = useMemo(() => sampleVars(profile, profileFields), [profile, profileFields]);
   const previewHtml = useMemo(() => (isHtml ? renderHtmlPreview(form.body, vars) : ""), [isHtml, form.body, vars]);
   const bodyBytes = useMemo(() => new TextEncoder().encode(form.body).length, [form.body]);
@@ -115,7 +116,12 @@ export function TemplateEditor({
 
   return (
     <>
-      <Modal onClose={onClose} title={template ? "Edit template" : "New template"} maxWidth={isHtml ? "max-w-6xl" : "max-w-2xl"}>
+      <Modal
+        onClose={onClose}
+        title={template ? "Edit template" : "New template"}
+        maxWidth={isHtml ? "max-w-6xl" : "max-w-2xl"}
+        confirmClose={dirty && !save.isPending && "Discard your unsaved changes to this template?"}
+      >
         <div className="space-y-3.5">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
