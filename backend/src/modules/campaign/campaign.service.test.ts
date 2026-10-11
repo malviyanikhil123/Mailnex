@@ -154,6 +154,21 @@ describe("CampaignService", () => {
       expect(repo.update).toHaveBeenCalledWith(userId, campaign.id, expect.objectContaining({ aiProvider: null, aiModel: null }));
     });
 
+    it("update does not re-check an unchanged provider and model", async () => {
+      // Saved with a custom model the provider no longer lists (changed in Settings since).
+      campaign.aiProvider = "openai";
+      campaign.aiModel = "ft:gpt-old";
+      const lookups = makeLookups();
+      const spy = vi.fn(lookups.aiProviderModels);
+      service = new CampaignService(repo, { ...lookups, aiProviderModels: spy });
+      await service.update(userId, campaign.id, { name: "Renamed", aiProvider: "openai", aiModel: "ft:gpt-old" });
+      expect(spy).not.toHaveBeenCalled();
+      expect(repo.update).toHaveBeenCalledWith(userId, campaign.id, expect.objectContaining({ name: "Renamed" }));
+      // Changing the model still validates it.
+      await expect(service.update(userId, campaign.id, { aiProvider: "openai", aiModel: "ft:gpt-other" }))
+        .rejects.toMatchObject({ statusCode: 400 });
+    });
+
     it("update leaves AI settings alone when they are not part of the patch", async () => {
       const lookups = makeLookups();
       const spy = vi.fn(lookups.aiProviderModels);

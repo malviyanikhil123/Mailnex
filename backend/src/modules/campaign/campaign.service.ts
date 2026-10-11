@@ -98,7 +98,13 @@ export class CampaignService {
       // switching provider without naming a model drops the old provider's model.
       const provider = input.aiProvider !== undefined ? input.aiProvider : existing.aiProvider;
       if (input.aiModel === undefined && provider !== existing.aiProvider) input = { ...input, aiModel: null };
-      await this.checkAi(userId, provider, input.aiModel !== undefined ? input.aiModel : existing.aiModel);
+      const model = input.aiModel !== undefined ? input.aiModel : existing.aiModel;
+      // The form re-sends the AI pair on every save. An unchanged pair was valid when it was
+      // stored; re-checking it would block unrelated edits (e.g. a rename) once the user
+      // changed that provider's custom model in Settings.
+      if (provider !== existing.aiProvider || model !== existing.aiModel) {
+        await this.checkAi(userId, provider, model);
+      }
     }
     const { templateIds, ...patch } = input;
     await this.repo.update(userId, id, patch as Partial<Campaign>);
