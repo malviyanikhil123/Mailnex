@@ -6,14 +6,26 @@
  * (ExcelJS's own writer, Google Sheets exports) it loses entries and fails at random.
  * So the zip's central directory is read here instead, and the parts are handed to
  * ExcelJS's reader in the order it needs: relationships, workbook, shared strings,
- * styles, then each worksheet in workbook order. Cells are still parsed by ExcelJS, so
+ * styles, then the worksheets in workbook order. Cells are still parsed by ExcelJS, so
  * values come out as with Workbook.xlsx.readFile (dates, formulas, rich text, errors),
  * except that hyperlink targets are not resolved: such a cell reads as its text.
  *
- * Every part is inflated through a byte cap, which also catches a zip whose directory
- * lies about its sizes. Parts that ExcelJS keeps whole in memory (shared strings,
- * styles, workbook) get small caps; a worksheet is read row by row, and running past
- * its cap only ends that sheet (SheetTooLargeError).
+ * Limits (XLSX_LIMITS), all enforced on the inflated bytes, so a zip whose directory
+ * lies about sizes is caught too:
+ *  - each part has its own cap, and all parts of one workbook share a total budget;
+ *  - parts ExcelJS keeps whole in memory (shared strings, styles, workbook) get small
+ *    caps and fail the read when exceeded;
+ *  - a worksheet is read row by row; passing its cap or the total budget only ends
+ *    the read there (SheetTooLargeError), the rows so far are kept;
+ *  - at most MAX_SHEETS distinct worksheet parts are read, each part once, however
+ *    many sheets workbook.xml lists;
+ *  - before the XML parser, a byte-level guard fails the read on a text or tag run
+ *    longer than MAX_TEXT_RUN_BYTES (the parser would buffer it whole) and on a row
+ *    with more than MAX_CELLS_PER_ROW cells holding content (or MAX_CELL_TAGS_PER_ROW
+ *    cells of any kind, Excel's own column limit).
+ *
+ * The parse runs on the main thread: with these caps its memory is bounded, so a
+ * worker thread is not used.
  *
  * This uses WorkbookReader's underscore methods (exceljs 4.4). If an upgrade renames
  * them, the parser tests fail rather than imports silently going wrong.
@@ -23,15 +35,29 @@ import * as zlib from "node:zlib";
 import { pipeline, Readable, Transform } from "node:stream";
 import ExcelJS from "exceljs";
 
+const MB = 1024 * 1024;
+
 export const XLSX_LIMITS = {
   /** workbook.xml and the relationship parts. */
-  MAX_META_BYTES: 4 * 1024 * 1024,
+  MAX_META_BYTES: 4 * MB,
   /** Kept whole in memory by ExcelJS. */
-  MAX_SHARED_STRINGS_BYTES: 100 * 1024 * 1024,
-  MAX_STYLES_BYTES: 16 * 1024 * 1024,
-  /** Read row by row; reading stops past this. */
-  MAX_SHEET_BYTES: 512 * 1024 * 1024,
+  MAX_SHARED_STRINGS_BYTES: 32 * MB,
+  MAX_STYLES_BYTES: 8 * MB,
+  /** One worksheet part; reading stops past this. */
+  MAX_SHEET_BYTES: 64 * MB,
+  /** Every part of the workbook together. */
+  MAX_TOTAL_BYTES: 256 * MB,
+  /** Distinct worksheet parts read. */
+  MAX_SHEETS: 10,
+  /** One run of text or one tag, i.e. roughly one cell value (32K characters, escaped). */
+  MAX_TEXT_RUN_BYTES: 128 * 1024,
+  /** Cells with content in one row. */
+  MAX_CELLS_PER_ROW: 1000,
+  /** Cells of any kind (empty styled ones too) in one row: Excel's column limit. */
+  MAX_CELL_TAGS_PER_ROW: 16_384,
 } as const;
+
+export type XlsxLimits = Record<keyof typeof XLSX_LIMITS, number>;
 
 export class XlsxFormatError extends Error {}
 
@@ -110,31 +136,114 @@ export async function readZipDirectory(filePath: string): Promise<Map<string, Zi
   }
 }
 
-/** Passes at most `max` bytes, then fails with the error `tooBig()` builds. */
-function byteCap(max: number, tooBig: () => Error): Transform {
+/** Inflated bytes left for the rest of one workbook. */
+export type ByteBudget = { remaining: number };
+
+/**
+ * Passes at most `max` bytes (and no more than the shared budget has left), then
+ * fails with the error `tooBig()` builds.
+ */
+function byteCap(max: number, tooBig: () => Error, budget?: ByteBudget): Transform {
   let seen = 0;
   return new Transform({
     transform(chunk: Buffer, _encoding, callback) {
       seen += chunk.length;
-      if (seen > max) callback(tooBig());
+      if (budget) budget.remaining -= chunk.length;
+      if (seen > max || (budget && budget.remaining < 0)) callback(tooBig());
       else callback(null, chunk);
     },
   });
 }
 
-/** The inflated bytes of one entry, capped at `max`. */
+const LT = 0x3c; // <
+const GT = 0x3e; // >
+const SLASH = 0x2f; // /
+
+function isNameByte(b: number): boolean {
+  // Letters, digits and the punctuation XML names use (":" for prefixes like "x:c").
+  return (b >= 0x61 && b <= 0x7a) || (b >= 0x41 && b <= 0x5a) || (b >= 0x30 && b <= 0x39) ||
+    b === 0x3a || b === 0x5f || b === 0x2d || b === 0x2e || b === SLASH;
+}
+
+/**
+ * A byte-level look at worksheet / shared-strings XML before the parser sees it: the
+ * parser keeps a whole text node or tag in memory, and ExcelJS keeps every cell of a
+ * row, so both are bounded here. "<" and ">" are ASCII, so UTF-8 needs no decoding.
+ */
+export function xmlGuard(limits: Pick<XlsxLimits, "MAX_TEXT_RUN_BYTES" | "MAX_CELLS_PER_ROW" | "MAX_CELL_TAGS_PER_ROW">): Transform {
+  let inTag = false;
+  let run = 0;
+  let naming = false;
+  let name = "";
+  let prev = 0;
+  let cells = 0;
+  let filled = 0;
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      for (let i = 0; i < chunk.length; i++) {
+        const b = chunk[i];
+        if (b === LT) {
+          inTag = true;
+          naming = true;
+          name = "";
+          run = 0;
+        } else if (b === GT && inTag) {
+          inTag = false;
+          naming = false;
+          run = 0;
+          // Closing tags ("</c>", "</x:c>") are not counted.
+          const local = name.startsWith("/") ? "" : name.slice(name.lastIndexOf(":") + 1);
+          if (local === "row") {
+            cells = 0;
+            filled = 0;
+          } else if (local === "c") {
+            cells++;
+            if (prev !== SLASH) filled++;
+            if (filled > limits.MAX_CELLS_PER_ROW || cells > limits.MAX_CELL_TAGS_PER_ROW) {
+              callback(new XlsxFormatError(`A row has more than ${limits.MAX_CELLS_PER_ROW} cells`));
+              return;
+            }
+          }
+        } else {
+          if (naming) {
+            if (isNameByte(b) && name.length < 32) name += String.fromCharCode(b);
+            else naming = false;
+          }
+          if (++run > limits.MAX_TEXT_RUN_BYTES) {
+            callback(new XlsxFormatError("A cell is too large"));
+            return;
+          }
+        }
+        prev = b;
+      }
+      callback(null, chunk);
+    },
+  });
+}
+
+export type OpenEntryOptions = {
+  tooBig?: () => Error;
+  budget?: ByteBudget;
+  /** Extra checks on the inflated bytes, e.g. xmlGuard(). */
+  guard?: Transform;
+  /** Refuse up front when the declared size is over the cap (default true). */
+  precheck?: boolean;
+};
+
+/** The inflated bytes of one entry, capped at `max` (and at the shared budget). */
 export async function openZipEntry(
   filePath: string,
   entry: ZipEntry,
   max: number,
-  tooBig: () => Error = () => new XlsxFormatError(`${entry.name} is too large`),
+  options: OpenEntryOptions = {},
 ): Promise<Readable> {
+  const { tooBig = () => new XlsxFormatError(`${entry.name} is too large`), budget, guard, precheck = true } = options;
   if (entry.flags & 0x1) throw new XlsxFormatError("Encrypted workbooks are not supported");
   if (entry.compressedSize === ZIP64_MARKER || entry.uncompressedSize === ZIP64_MARKER) {
     throw new XlsxFormatError("ZIP64 workbooks are not supported");
   }
   // The declared size can lie; the cap below holds either way.
-  if (entry.uncompressedSize > max) throw tooBig();
+  if (precheck && entry.uncompressedSize > max) throw tooBig();
 
   const handle = await fs.promises.open(filePath, "r");
   let header: Buffer;
@@ -146,15 +255,17 @@ export async function openZipEntry(
   if (header.readUInt32LE(0) !== LOCAL_SIGNATURE) throw new XlsxFormatError("Corrupt zip entry");
   const start = entry.localHeaderOffset + 30 + header.readUInt16LE(26) + header.readUInt16LE(28);
 
+  if (entry.method !== 0 && entry.method !== 8) {
+    throw new XlsxFormatError(`Unsupported zip compression method ${entry.method}`);
+  }
   const raw: Readable = entry.compressedSize === 0
     ? Readable.from([])
     : fs.createReadStream(filePath, { start, end: start + entry.compressedSize - 1 });
-  const cap = byteCap(max, tooBig);
-  const done = () => {};
-  if (entry.method === 0) return pipeline(raw, cap, done);
-  if (entry.method === 8) return pipeline(raw, zlib.createInflateRaw(), cap, done);
-  raw.destroy();
-  throw new XlsxFormatError(`Unsupported zip compression method ${entry.method}`);
+  const stages: NodeJS.ReadWriteStream[] = [];
+  if (entry.method === 8) stages.push(zlib.createInflateRaw());
+  stages.push(byteCap(max, tooBig, budget));
+  if (guard) stages.push(guard);
+  return pipeline([raw, ...stages], () => {}) as unknown as Readable;
 }
 
 /** The parts of ExcelJS's WorkbookReader this module drives (exceljs 4.4). */
@@ -184,17 +295,19 @@ function partPath(target: string): string {
 }
 
 /**
- * Every worksheet of the workbook, in workbook order. Consume (or close) each sheet
- * before asking for the next one.
+ * The worksheets of the workbook, in workbook order: at most MAX_SHEETS distinct parts,
+ * each once. Consume (or close) each sheet before asking for the next one.
  */
 export async function* streamXlsxSheets(
   filePath: string,
-  limits: Record<keyof typeof XLSX_LIMITS, number> = XLSX_LIMITS,
+  limits: XlsxLimits = XLSX_LIMITS,
 ): AsyncGenerator<XlsxSheet> {
   const entries = await readZipDirectory(filePath);
-  const part = async (name: string, max: number) => {
+  const budget: ByteBudget = { remaining: limits.MAX_TOTAL_BYTES };
+  const guard = () => xmlGuard(limits);
+  const part = async (name: string, max: number, withGuard = false) => {
     const entry = entries.get(name);
-    return entry ? openZipEntry(filePath, entry, max) : null;
+    return entry ? openZipEntry(filePath, entry, max, { budget, guard: withGuard ? guard() : undefined }) : null;
   };
 
   const reader = new ExcelJS.stream.xlsx.WorkbookReader(filePath, {
@@ -212,28 +325,33 @@ export async function* streamXlsxSheets(
   await reader._parseRels(rels);
   await reader._parseWorkbook(workbook);
 
-  const sharedStrings = await part("xl/sharedStrings.xml", limits.MAX_SHARED_STRINGS_BYTES);
+  const sharedStrings = await part("xl/sharedStrings.xml", limits.MAX_SHARED_STRINGS_BYTES, true);
   // Cells refer to shared strings by index, so an empty table is still needed.
-  if (sharedStrings) for await (const _ of reader._parseSharedStrings(sharedStrings)) void _;
-  else for await (const _ of reader._parseSharedStrings(Readable.from([]))) void _;
+  for await (const _ of reader._parseSharedStrings(sharedStrings ?? Readable.from([]))) void _;
   const styles = await part("xl/styles.xml", limits.MAX_STYLES_BYTES);
   if (styles) await reader._parseStyles(styles);
 
   const relById = new Map((reader.workbookRels ?? []).map((r) => [r.Id, r]));
+  const seen = new Set<string>();
   for (const sheet of reader.model?.sheets ?? []) {
+    if (seen.size >= limits.MAX_SHEETS) break;
     const rel = relById.get(sheet.rId);
     // Chartsheets and dialog sheets have no rows.
     if (!rel || (rel.Type && !rel.Type.endsWith("/worksheet"))) continue;
     const path = partPath(rel.Target);
+    // workbook.xml can list the same part many times; it is read once.
+    if (seen.has(path)) continue;
     const entry = entries.get(path);
     if (!entry) continue;
+    seen.add(path);
 
-    const stream = await openZipEntry(
-      filePath,
-      entry,
-      limits.MAX_SHEET_BYTES,
-      () => new SheetTooLargeError(`${path} is too large`),
-    );
+    const stream = await openZipEntry(filePath, entry, limits.MAX_SHEET_BYTES, {
+      tooBig: () => new SheetTooLargeError(`${path} is too large`),
+      budget,
+      guard: guard(),
+      // Past the cap only this read ends; the rows before it are kept.
+      precheck: false,
+    });
     const sheetNo = /sheet(\d+)\.xml$/.exec(path)?.[1] ?? "1";
     const emitted = [...reader._parseWorksheet(stream, sheetNo)].find((e) => e.eventType === "worksheet");
     if (!emitted) {

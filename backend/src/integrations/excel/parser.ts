@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { streamXlsxSheets, SheetTooLargeError } from "./xlsx-stream.js";
+import { streamXlsxSheets, SheetTooLargeError, XLSX_LIMITS, type XlsxLimits } from "./xlsx-stream.js";
 import { logger } from "../../utils/logger.js";
 import { splitFullName } from "../../utils/person-name.js";
 import { BUILTIN_TEMPLATE_VARS } from "../../config/constants.js";
@@ -37,6 +37,8 @@ export const IMPORT_LIMITS = {
   MAX_VALUE_LENGTH: 500,
   /** Rows past this are skipped. The upload itself is capped at 20 MB (app.ts). */
   MAX_ROWS: 100_000,
+  /** A cell is read up to this many characters (values are stored cut to MAX_VALUE_LENGTH). */
+  MAX_CELL_CHARS: 32_768,
 } as const;
 
 const HEADER_SCAN_ROWS = 10;
@@ -298,6 +300,12 @@ function detectHeader(rows: string[][]): HeaderInfo {
   return { headerRowIdx, fields };
 }
 
+/** A cell as trimmed text, cut to IMPORT_LIMITS.MAX_CELL_CHARS. */
+export function cellText(value: unknown): string {
+  const text = extractCellString(value);
+  return text.length > IMPORT_LIMITS.MAX_CELL_CHARS ? text.slice(0, IMPORT_LIMITS.MAX_CELL_CHARS) : text;
+}
+
 /**
  * One worksheet, read row by row. Only the first `keep` non-empty rows are held in
  * memory (the header candidates plus maxRows data rows). Later rows are counted and
@@ -322,7 +330,7 @@ class SheetScan {
   add(rowNumber: number, values: unknown): void {
     if (rowNumber > this.rowCount) this.rowCount = rowNumber;
     const rawValues = Array.isArray(values) ? values.slice(1) : [];
-    const cells = Array.from(rawValues, extractCellString);
+    const cells = Array.from(rawValues, cellText);
     if (!cells.some(Boolean)) return;
     this.total++;
     if (this.rows.length < this.keep) {
@@ -365,10 +373,15 @@ async function scanCsv(filePath: string, keep: number): Promise<SheetScan | null
  * whole, and only the kept rows of the current and the best sheet so far are held. As
  * before, the sheet with the most rows wins (the first one on a tie).
  */
-async function scanXlsx(filePath: string, keep: number, maxRowsRead: number): Promise<SheetScan | null> {
+async function scanXlsx(
+  filePath: string,
+  keep: number,
+  maxRowsRead: number,
+  limits: XlsxLimits,
+): Promise<SheetScan | null> {
   let best: SheetScan | null = null;
   let budget = maxRowsRead;
-  for await (const sheet of streamXlsxSheets(filePath)) {
+  for await (const sheet of streamXlsxSheets(filePath, limits)) {
     const scan = new SheetScan(keep);
     let stop = false;
     try {
@@ -405,13 +418,13 @@ async function scanXlsx(filePath: string, keep: number, maxRowsRead: number): Pr
 export async function parseContactsXlsx(
   filePath: string,
   onRow: (row: ParsedContact, index: number) => void,
-  options: { maxRows?: number; maxRowsRead?: number } = {},
+  options: { maxRows?: number; maxRowsRead?: number; xlsxLimits?: XlsxLimits } = {},
 ): Promise<ParseResult> {
   const maxRows = options.maxRows ?? IMPORT_LIMITS.MAX_ROWS;
   const keep = HEADER_SCAN_ROWS + maxRows;
   const scan = filePath.toLowerCase().endsWith(".csv")
     ? await scanCsv(filePath, keep)
-    : await scanXlsx(filePath, keep, options.maxRowsRead ?? MAX_ROWS_READ);
+    : await scanXlsx(filePath, keep, options.maxRowsRead ?? MAX_ROWS_READ, options.xlsxLimits ?? XLSX_LIMITS);
 
   const empty: ParseResult = { total: 0, skipped: 0, customFieldKeys: [] };
   if (!scan || scan.rows.length === 0) return empty;
