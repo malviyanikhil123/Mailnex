@@ -44,17 +44,28 @@ const schema = z.object({
   /** "1" runs the API without the send/inbox scheduler, e.g. a local UI pointed at a shared DB. */
   DISABLE_SCHEDULER: z.enum(["0", "1"]).default("0"),
   /**
-   * Fastify's trustProxy: "true" trusts every X-Forwarded-For hop, a number trusts that
-   * many hops (1 = one reverse proxy, e.g. nginx). Off by default, so req.ip — which
-   * the rate limits key on — cannot be spoofed with a header when nothing sits in front.
+   * Fastify's trustProxy as a hop count: how many reverse proxies sit in front of the
+   * API (1 = one nginx). Off by default, so req.ip — which the rate limits key on —
+   * cannot be spoofed with a header when nothing sits in front. "true" is refused: it
+   * would trust the leftmost X-Forwarded-For value, which the client writes itself.
    */
   TRUST_PROXY: z
     .string()
     .trim()
     .toLowerCase()
     .default("false")
-    .refine((v) => /^(true|false|\d+)?$/.test(v), 'TRUST_PROXY must be "true", "false" or a hop count')
-    .transform((v): boolean | number => (v === "true" ? true : /^\d+$/.test(v) && Number(v) > 0 ? Number(v) : false)),
+    .superRefine((v, ctx) => {
+      if (v === "true") {
+        ctx.addIssue({
+          code: "custom",
+          message:
+            'TRUST_PROXY=true would trust a client-supplied X-Forwarded-For; set the number of proxies in front of the API instead (usually 1), or "false"',
+        });
+      } else if (!/^(false|\d{1,2})?$/.test(v)) {
+        ctx.addIssue({ code: "custom", message: 'TRUST_PROXY must be "false" or a hop count, e.g. 1' });
+      }
+    })
+    .transform((v): number | false => (/^\d+$/.test(v) && Number(v) > 0 ? Number(v) : false)),
   /**
    * Comma-separated origins allowed to call the API with credentials, e.g.
    * "https://app.example.com,http://localhost:5173". Unset = any origin (the old default).

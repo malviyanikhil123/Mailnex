@@ -93,13 +93,16 @@ describe("TRUST_PROXY", () => {
     expect(loadEnv(base).TRUST_PROXY).toBe(false);
     for (const v of ["false", "0", "", " FALSE "]) expect(loadEnv({ ...base, TRUST_PROXY: v }).TRUST_PROXY).toBe(false);
   });
-  it("accepts true or a hop count", () => {
-    expect(loadEnv({ ...base, TRUST_PROXY: "true" }).TRUST_PROXY).toBe(true);
+  it("refuses true, which would trust a client-written X-Forwarded-For", () => {
+    expect(() => loadEnv({ ...base, TRUST_PROXY: "true" })).toThrow(/hop|number of proxies/);
+    expect(() => loadEnv({ ...base, TRUST_PROXY: " TRUE " })).toThrow(/number of proxies/);
+  });
+  it("accepts a hop count", () => {
     expect(loadEnv({ ...base, TRUST_PROXY: "1" }).TRUST_PROXY).toBe(1);
     expect(loadEnv({ ...base, TRUST_PROXY: "2" }).TRUST_PROXY).toBe(2);
   });
   it("rejects anything else rather than guessing", () => {
-    for (const v of ["yes", "10.0.0.0/8", "-1", "1.5"]) expect(() => loadEnv({ ...base, TRUST_PROXY: v })).toThrow();
+    for (const v of ["yes", "10.0.0.0/8", "-1", "1.5", "loopback"]) expect(() => loadEnv({ ...base, TRUST_PROXY: v })).toThrow();
   });
 });
 

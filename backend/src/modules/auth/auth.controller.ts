@@ -3,7 +3,7 @@ import { AuthService } from "./auth.service.js";
 import { authRepo } from "./auth.repo.js";
 import { loginSchema, logoutSchema, registerSchema, refreshSchema } from "./auth.schema.js";
 import { authGuard } from "../../middleware/auth-guard.js";
-import { authRateLimit } from "../../middleware/rate-limit.js";
+import { authRateLimit, loginEmailLimiter } from "../../middleware/rate-limit.js";
 
 export async function authController(app: FastifyInstance) {
   const signAccess = (payload: object) =>
@@ -20,7 +20,12 @@ export async function authController(app: FastifyInstance) {
   });
 
   // POST /auth/login
-  app.post("/login", { config: { rateLimit: authRateLimit("auth-login") } }, async (req: FastifyRequest, reply: FastifyReply) => {
+  // Two buckets: per client and email (fast), and per email from anywhere (slow), so
+  // spreading guesses over many addresses doesn't help.
+  app.post("/login", {
+    preHandler: loginEmailLimiter(),
+    config: { rateLimit: authRateLimit("auth-login") },
+  }, async (req: FastifyRequest, reply: FastifyReply) => {
     const body = loginSchema.parse(req.body);
     const result = await service.login(body.email, body.password, {
       rememberMe: body.rememberMe,

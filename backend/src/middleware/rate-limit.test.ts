@@ -57,3 +57,81 @@ describe("per-route rate limits (no DB required)", () => {
     expect(res.statusCode).toBe(401);
   });
 });
+
+describe("clientKey", () => {
+  it("keeps IPv4 as is, also when IPv4-mapped", async () => {
+    const { clientKey } = await import("./rate-limit.js");
+    expect(clientKey("203.0.113.5")).toBe("203.0.113.5");
+    expect(clientKey("::ffff:203.0.113.5")).toBe("203.0.113.5");
+  });
+
+  it("keys IPv6 by its /64, however the address is written", async () => {
+    const { clientKey } = await import("./rate-limit.js");
+    expect(clientKey("2001:db8:1:2::a")).toBe("2001:db8:1:2::/64");
+    expect(clientKey("2001:0db8:0001:0002:ffff:ffff:ffff:ffff")).toBe("2001:db8:1:2::/64");
+    expect(clientKey("2001:db8::1")).toBe("2001:db8:0:0::/64");
+    expect(clientKey("::1")).toBe("0:0:0:0::/64");
+    expect(clientKey("fe80::1%eth0")).toBe("fe80:0:0:0::/64");
+    expect(clientKey("64:ff9b::192.0.2.1")).toBe("64:ff9b:0:0::/64");
+    expect(clientKey("2001:db8:1:3::a")).not.toBe(clientKey("2001:db8:1:2::a"));
+  });
+});
+
+describe("login limits behind a proxy (no DB required)", () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    const { buildApp } = await import("../app.js");
+    app = await buildApp({ TRUST_PROXY: 1, CORS_ORIGINS: [] });
+    await app.ready();
+  }, 30000);
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  const login = (forwardedFor: string, email: string) =>
+    app.inject({
+      method: "POST",
+      url: "/auth/login",
+      headers: { "x-forwarded-for": forwardedFor },
+      payload: { email },
+    });
+
+  it("allows 20 attempts an hour per email, from however many addresses", async () => {
+    for (let i = 0; i < 20; i++) expect((await login(`198.51.100.${i}`, "Victim@Test.com")).statusCode).toBe(400);
+    expect((await login("198.51.100.200", "victim@test.com")).statusCode).toBe(429);
+    expect((await login("198.51.100.201", "someone-else@test.com")).statusCode).toBe(400);
+  });
+
+  it("counts every address in an IPv6 /64 as one client", async () => {
+    for (let i = 0; i < 10; i++) expect((await login(`2001:db8:5:6::${i + 1}`, "v6@test.com")).statusCode).toBe(400);
+    expect((await login("2001:db8:5:6:ffff::1", "v6@test.com")).statusCode).toBe(429);
+    expect((await login("2001:db8:5:7::1", "v6@test.com")).statusCode).toBe(400);
+  });
+});
+
+describe("windowLimiter", () => {
+  it("resets after the window and drops the oldest key past maxKeys", async () => {
+    const { windowLimiter } = await import("./rate-limit.js");
+    let t = 0;
+    const hook = windowLimiter({
+      max: 2, windowMs: 1000, maxKeys: 2, message: "slow down",
+      key: (req) => (req.body as { k: string }).k,
+      now: () => t,
+    });
+    const reply = { header: () => reply } as never;
+    const hit = (k: string) => (hook as (req: unknown, reply: unknown) => Promise<void>)({ body: { k } }, reply);
+
+    await hit("a");
+    await hit("a");
+    await expect(hit("a")).rejects.toMatchObject({ statusCode: 429, message: "slow down" });
+    t = 1000;
+    await expect(hit("a")).resolves.toBeUndefined();
+    // "a" is the oldest once "b" and "c" arrive, so it starts over.
+    await hit("a");
+    await hit("b");
+    await hit("c");
+    await expect(hit("a")).resolves.toBeUndefined();
+  });
+});
