@@ -73,7 +73,7 @@ describe("auth validation errors over HTTP", () => {
     await app.close();
   });
 
-  it("returns the first friendly message, prefixed with its field, alongside the details", async () => {
+  it("returns the first friendly message as it is, alongside the details", async () => {
     const res = await app.inject({
       method: "POST",
       url: "/auth/register",
@@ -82,7 +82,7 @@ describe("auth validation errors over HTTP", () => {
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({
       error: "ValidationError",
-      message: "password: Password must be at least 8 characters",
+      message: "Password must be at least 8 characters",
       details: { fieldErrors: { password: ["Password must be at least 8 characters"] } },
     });
   });
