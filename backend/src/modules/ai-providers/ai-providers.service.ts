@@ -121,7 +121,14 @@ export class AiProvidersService {
       const problem = keyFormatError(provider, input.apiKey);
       if (problem) throw httpError(400, problem);
       await this.verifyOrThrow({ provider, apiKey: input.apiKey, model });
-      await this.repo.upsert(userId, provider, { apiKeyEnc: encrypt(input.apiKey), defaultModel: model });
+      // The first key becomes the default (in the same transaction as the upsert), so
+      // inbox sorting and campaigns work at once.
+      await this.repo.upsert(
+        userId,
+        provider,
+        { apiKeyEnc: encrypt(input.apiKey), defaultModel: model },
+        { makeDefault: !!input.makeDefault },
+      );
     } else {
       if (!existing) throw httpError(400, `Paste an API key to connect ${label}`);
       if (model !== existing.defaultModel) {
@@ -131,11 +138,10 @@ export class AiProvidersService {
         }
         await this.repo.updateModel(userId, provider, model);
       }
+      if (input.makeDefault || !(await this.repo.list(userId)).some((r) => r.isDefault)) {
+        await this.repo.setDefault(userId, provider);
+      }
     }
-
-    // The first key becomes the default, so inbox sorting and campaigns work at once.
-    const rows = await this.repo.list(userId);
-    if (input.makeDefault || !rows.some((r) => r.isDefault)) await this.repo.setDefault(userId, provider);
     return this.list(userId);
   }
 
@@ -150,13 +156,8 @@ export class AiProvidersService {
   /** Removes the key. Campaigns that used it fall back to the default provider, and
    *  if it was the default, the oldest remaining key takes over. */
   async remove(userId: number, provider: AiProvider): Promise<PublicAiProvider[]> {
-    const existing = await this.repo.get(userId, provider);
-    if (!existing || !(await this.repo.remove(userId, provider))) {
+    if (!(await this.repo.remove(userId, provider))) {
       throw httpError(404, `${PROVIDERS[provider].label} is not configured`);
-    }
-    if (existing.isDefault) {
-      const [next] = await this.repo.list(userId);
-      if (next) await this.repo.setDefault(userId, next.provider);
     }
     return this.list(userId);
   }

@@ -25,15 +25,21 @@ function makeFakeRepo(): IAiProvidersRepo & { rows: AiProviderKey[] } {
     async get(_userId, provider) {
       return rows.find((r) => r.provider === provider) ?? null;
     },
-    async upsert(userId, provider, values) {
-      const row = rows.find((r) => r.provider === provider);
-      if (row) return Object.assign(row, values, { updatedAt: new Date() });
-      const created = {
-        id: nextId++, userId, provider, ...values, isDefault: false,
-        createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, clock++)), updatedAt: new Date(),
-      };
-      rows.push(created);
-      return created;
+    async upsert(userId, provider, values, options = {}) {
+      let row = rows.find((r) => r.provider === provider);
+      if (row) Object.assign(row, values, { updatedAt: new Date() });
+      else {
+        row = {
+          id: nextId++, userId, provider, ...values, isDefault: false,
+          createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, clock++)), updatedAt: new Date(),
+        };
+        rows.push(row);
+      }
+      // Same as the real repo: the default is set in the upsert's transaction.
+      if (options.makeDefault || !rows.some((r) => r.isDefault)) {
+        for (const r of rows) r.isDefault = r === row;
+      }
+      return row;
     },
     async updateModel(_userId, provider, defaultModel) {
       const row = rows.find((r) => r.provider === provider);
@@ -45,7 +51,12 @@ function makeFakeRepo(): IAiProvidersRepo & { rows: AiProviderKey[] } {
     async remove(_userId, provider) {
       const i = rows.findIndex((r) => r.provider === provider);
       if (i < 0) return false;
-      rows.splice(i, 1);
+      const [removed] = rows.splice(i, 1);
+      // Same as the real repo: the oldest remaining key takes over in the same transaction.
+      if (removed!.isDefault) {
+        const [next] = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        if (next) next.isDefault = true;
+      }
       return true;
     },
   };
@@ -219,6 +230,17 @@ describe("AiProvidersService", () => {
     const list = await service.remove(userId, "google");
     expect(list.find((p) => p.provider === "google")!.configured).toBe(false);
     expect(list.filter((p) => p.isDefault).map((p) => p.provider)).toEqual(["openai"]);
+  });
+
+  it("sets and hands over the default inside the repo's upsert/remove, not as a separate write", async () => {
+    const setDefault = vi.spyOn(repo, "setDefault");
+    const upsert = vi.spyOn(repo, "upsert");
+    await service.save(userId, "google", { apiKey: KEYS.google });
+    await service.save(userId, "openai", { apiKey: KEYS.openai, makeDefault: true });
+    expect(upsert).toHaveBeenLastCalledWith(userId, "openai", expect.anything(), { makeDefault: true });
+    await service.remove(userId, "openai");
+    expect(setDefault).not.toHaveBeenCalled();
+    expect(repo.rows.filter((r) => r.isDefault).map((r) => r.provider)).toEqual(["google"]);
   });
 
   it("removing an unconfigured provider is a 404", async () => {
