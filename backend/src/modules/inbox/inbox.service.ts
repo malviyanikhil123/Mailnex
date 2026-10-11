@@ -302,15 +302,19 @@ export class InboxService {
     return { updated };
   }
 
-  /** A job status only survives on a category that actually tracks one. */
+  /**
+   * The target category must be the user's own, whether or not a job status comes
+   * with it. A job status only survives on a category that actually tracks one.
+   */
   private async resolveJobStatus(
     userId: number,
     categoryId: number | null,
     jobStatus: JobStatus | null,
   ): Promise<JobStatus | null> {
-    if (!jobStatus || categoryId === null) return null;
+    if (categoryId === null) return null;
     const category = await this.repo.getCategory(userId, categoryId);
     if (!category) throw httpError("Category not found", 404);
+    if (!jobStatus) return null;
     return category.trackSubStatus ? jobStatus : null;
   }
 

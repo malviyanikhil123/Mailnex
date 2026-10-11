@@ -202,6 +202,16 @@ describe("InboxService manual assignment", () => {
       .rejects.toMatchObject({ statusCode: 404 });
   });
 
+  it("rejects another user's category even without a job status", async () => {
+    const repo = fakeRepo({ getCategory: vi.fn(async () => null) });
+    const svc = new InboxService({ repo });
+    await expect(svc.setCategory(USER, 1, 77, null)).rejects.toMatchObject({ statusCode: 404 });
+    await expect(svc.bulkSetCategory(USER, { ids: [1, 2], categoryId: 77 }))
+      .rejects.toMatchObject({ statusCode: 404 });
+    expect(repo.getCategory).toHaveBeenCalledWith(USER, 77);
+    expect(repo.setManualAssignment).not.toHaveBeenCalled();
+  });
+
   it("reports how many rows a bulk move changed", async () => {
     const svc = new InboxService({ repo: fakeRepo() });
     await expect(svc.bulkSetCategory(USER, { ids: [1, 2, 3], categoryId: 10 }))
