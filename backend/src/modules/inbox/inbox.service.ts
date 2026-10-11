@@ -34,6 +34,9 @@ export interface InboxJobProgress {
 
 export const inboxJobProgress = new Map<string, InboxJobProgress>();
 
+/** jobId → userId that started it, so one user cannot poll another user's job. */
+const inboxJobOwners = new Map<string, number>();
+
 /** userId → in-flight jobId, so a double-clicked button does not open a second IMAP session. */
 const inboxManualRuns = new Map<number, string>();
 
@@ -44,6 +47,7 @@ function startJob(userId: number, kind: "sync" | "classify"): { jobId: string; f
   }
   const jobId = randomUUID();
   inboxManualRuns.set(userId, jobId);
+  inboxJobOwners.set(jobId, userId);
   inboxJobProgress.set(jobId, { jobId, kind, phase: "starting", processed: 0, total: 0, done: false });
   return { jobId, fresh: true };
 }
@@ -52,7 +56,10 @@ function finishJob(userId: number, jobId: string, patch: Partial<InboxJobProgres
   const current = inboxJobProgress.get(jobId);
   if (current) inboxJobProgress.set(jobId, { ...current, ...patch, done: true });
   if (inboxManualRuns.get(userId) === jobId) inboxManualRuns.delete(userId);
-  const t = setTimeout(() => inboxJobProgress.delete(jobId), 5 * 60 * 1000);
+  const t = setTimeout(() => {
+    inboxJobProgress.delete(jobId);
+    inboxJobOwners.delete(jobId);
+  }, 5 * 60 * 1000);
   t.unref?.();
 }
 
@@ -511,9 +518,10 @@ export class InboxService {
     return { jobId };
   }
 
-  getJobProgress(jobId: string): InboxJobProgress {
+  getJobProgress(userId: number, jobId: string): InboxJobProgress {
     const p = inboxJobProgress.get(jobId);
-    if (!p) throw httpError("Job not found", 404);
+    // Another user's job looks exactly like an unknown one.
+    if (!p || inboxJobOwners.get(jobId) !== userId) throw httpError("Job not found", 404);
     return p;
   }
 

@@ -27,6 +27,22 @@ export type ImportSummaryResult = {
  */
 export const importProgress = new Map<string, ImportProgressEntry>();
 
+/** jobId → userId that started it, so one user cannot poll another user's import. */
+const importOwners = new Map<string, number>();
+
+/** The job's progress, or null when it is unknown or belongs to another user. */
+export function getImportProgress(userId: number, jobId: string): ImportProgressEntry | null {
+  if (importOwners.get(jobId) !== userId) return null;
+  return importProgress.get(jobId) ?? null;
+}
+
+function evictImportProgress(jobId: string): void {
+  setTimeout(() => {
+    importProgress.delete(jobId);
+    importOwners.delete(jobId);
+  }, PROGRESS_TTL_MS).unref?.();
+}
+
 const PROGRESS_TTL_MS = 5 * 60 * 1000;
 
 /** The upload is not a readable spreadsheet; the message is shown to the user. */
@@ -47,6 +63,7 @@ export class ContactsService {
     name?: string,
   ): Promise<ImportSummaryResult> {
     // Initialize progress entry
+    importOwners.set(jobId, userId);
     importProgress.set(jobId, { processed: 0, total: 0, done: false });
 
     try {
@@ -147,7 +164,7 @@ export class ContactsService {
         done: true,
         summary,
       });
-      setTimeout(() => importProgress.delete(jobId), PROGRESS_TTL_MS).unref?.();
+      evictImportProgress(jobId);
 
       return summary;
     } catch (err) {
@@ -159,7 +176,7 @@ export class ContactsService {
         done: true,
         error: err instanceof UnreadableFileError ? err.message : "Import failed. Please try again.",
       });
-      setTimeout(() => importProgress.delete(jobId), PROGRESS_TTL_MS).unref?.();
+      evictImportProgress(jobId);
       throw err;
     } finally {
       // Delete the temp uploaded file on both success and failure

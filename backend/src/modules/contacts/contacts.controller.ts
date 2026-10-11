@@ -5,7 +5,7 @@ import * as path from "path";
 import { pipeline } from "stream/promises";
 import { createWriteStream } from "fs";
 import { authGuard } from "../../middleware/auth-guard.js";
-import { contactsService, importProgress } from "./contacts.service.js";
+import { contactsService, getImportProgress } from "./contacts.service.js";
 import { contactsRepo } from "./contacts.repo.js";
 import { listContactsQuerySchema, listImportsQuerySchema } from "./contacts.schema.js";
 import { env } from "../../config/env.js";
@@ -83,7 +83,7 @@ export async function contactsController(app: FastifyInstance) {
     { preHandler: authGuard },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const { jobId } = req.params as { jobId: string };
-      const progress = importProgress.get(jobId);
+      const progress = getImportProgress(getUserId(req), jobId);
       if (!progress) {
         return reply.code(404).send({ error: "Job not found" });
       }

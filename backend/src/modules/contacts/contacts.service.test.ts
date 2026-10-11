@@ -63,6 +63,11 @@ describe("ContactsService.importFromFile (unit, mocked repo)", () => {
     expect(importProgress.get(jobId)?.done).toBe(true);
     expect(importProgress.get(jobId)?.summary?.imported).toBe(3);
 
+    const { getImportProgress } = await import("./contacts.service.js");
+    expect(getImportProgress(userId, jobId)?.done).toBe(true);
+    // Another user polling the same job id sees nothing.
+    expect(getImportProgress(userId + 1, jobId)).toBeNull();
+
     await expect(fs.access(tmpFile)).rejects.toThrow();
   }, 15_000);
 
