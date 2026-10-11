@@ -1,4 +1,5 @@
 import { db } from "../../db/index.js";
+import { likeContains, SEARCH_MAX_LENGTH } from "../../utils/like.js";
 import { discoveryJobs, discoveredLeads } from "../../db/schema/lead-discovery.js";
 import { contacts } from "../../db/schema/contacts.js";
 import { splitFullName } from "../../utils/person-name.js";
@@ -154,12 +155,13 @@ export class LeadDiscoveryRepo {
       conditions.push(eq(discoveredLeads.isImported, query.isImported));
     }
     if (query.search) {
+      const like = likeContains(query.search.slice(0, SEARCH_MAX_LENGTH));
       conditions.push(
         or(
-          ilike(discoveredLeads.email, `%${query.search}%`),
-          ilike(discoveredLeads.companyName, `%${query.search}%`),
-          ilike(discoveredLeads.companyDomain, `%${query.search}%`),
-          ilike(discoveredLeads.location, `%${query.search}%`)
+          ilike(discoveredLeads.email, like),
+          ilike(discoveredLeads.companyName, like),
+          ilike(discoveredLeads.companyDomain, like),
+          ilike(discoveredLeads.location, like)
         )!
       );
     }

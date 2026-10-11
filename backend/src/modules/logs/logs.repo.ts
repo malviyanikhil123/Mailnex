@@ -1,4 +1,5 @@
 import { db } from "../../db/index.js";
+import { likeContains } from "../../utils/like.js";
 import { emailLogs } from "../../db/schema/logs.js";
 import { contacts } from "../../db/schema/contacts.js";
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
@@ -56,7 +57,7 @@ export class LogsRepo {
       );
     }
     if (query.search) {
-      const like = `%${query.search}%`;
+      const like = likeContains(query.search);
       conditions.push(or(ilike(emailLogs.subject, like), ilike(emailLogs.errorMessage, like))!);
     }
 
@@ -91,7 +92,7 @@ export class LogsRepo {
       );
     }
     if (query.search) {
-      const like = `%${query.search}%`;
+      const like = likeContains(query.search);
       conditions.push(or(ilike(emailLogs.subject, like), ilike(emailLogs.errorMessage, like))!);
     }
     const where = and(...conditions);

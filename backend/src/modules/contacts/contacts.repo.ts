@@ -4,6 +4,7 @@ import { contactsImports } from "../../db/schema/imports.js";
 import { campaignQueue } from "../../db/schema/campaign.js";
 import { emailLogs } from "../../db/schema/logs.js";
 import { ilike, eq, or, and, asc, desc, count, sql } from "drizzle-orm";
+import { likeContains } from "../../utils/like.js";
 import type { ListContactsQuery, ListImportsQuery } from "./contacts.schema.js";
 import type { contactStatus } from "../../db/schema/enums.js";
 
@@ -57,7 +58,7 @@ export class ContactsRepo {
 
     const conditions = [eq(contacts.userId, userId)];
     if (search) {
-      const like = `%${search}%`;
+      const like = likeContains(search);
       conditions.push(
         or(
           ilike(contacts.companyName, like),
@@ -163,7 +164,7 @@ export class ContactsRepo {
   async listImports(userId: number, query: Partial<ListImportsQuery> = {}) {
     const conditions = [eq(contactsImports.userId, userId)];
     if (query.search) {
-      const like = `%${query.search}%`;
+      const like = likeContains(query.search);
       conditions.push(or(ilike(contactsImports.name, like), ilike(contactsImports.fileName, like))!);
     }
     const where = and(...conditions);
