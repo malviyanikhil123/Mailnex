@@ -10,10 +10,10 @@ pipeline {
     }
 
     environment {
-        IMAGE_API          = "nikhilmalviya80/mailnex-api:latest"
-        IMAGE_UI           = "nikhilmalviya80/mailnex-ui:latest"
+        IMAGE_API          = "nikhilmalviya80/client-mailnex-api:latest"
+        IMAGE_UI           = "nikhilmalviya80/client-mailnex-ui:latest"
 
-        COMPOSE_FILE = "/home/nikhil_malviya/docker/Mailex/docker-compose.yml"
+        COMPOSE_FILE = "/home/nikhil_malviya/docker/client-mailex/docker-compose.yml"
     }
 
     stages {
@@ -88,7 +88,7 @@ pipeline {
                         echo "========== Deploying Mailnex Backend =========="
 
                         sh """
-                            docker-compose -f ${COMPOSE_FILE} pull mailnex-api
+                            docker-compose -f ${COMPOSE_FILE} pull client-mailnex-api
                             docker-compose -f ${COMPOSE_FILE} up -d --no-deps --force-recreate mailnex-api
                         """
                     }
@@ -98,7 +98,7 @@ pipeline {
                         echo "========== Deploying Mailnex Frontend =========="
 
                         sh """
-                            docker-compose -f ${COMPOSE_FILE} pull mailnex-ui
+                            docker-compose -f ${COMPOSE_FILE} pull client-mailnex-ui
                             docker-compose -f ${COMPOSE_FILE} up -d --no-deps --force-recreate mailnex-ui
                         """
                     }
