@@ -23,7 +23,7 @@ pipeline {
                 deleteDir()
 
                 git(
-                    branch: 'develop',
+                    branch: 'client-main',
                     credentialsId: 'github-creds',
                     url: 'https://github.com/malviyanikhil123/Mailnex.git'
                 )
