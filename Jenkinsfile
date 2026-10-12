@@ -13,7 +13,7 @@ pipeline {
         IMAGE_API          = "nikhilmalviya80/client-mailnex-api:latest"
         IMAGE_UI           = "nikhilmalviya80/client-mailnex-ui:latest"
 
-        COMPOSE_FILE = "/home/nikhil_malviya/docker/client-mailex/docker-compose.yml"
+        COMPOSE_FILE = "/home/nikhil_malviya/docker/client-mailnex/docker-compose.ym"
     }
 
     stages {
