@@ -1,11 +1,14 @@
-import * as path from "path";
 import { LIMITS } from "../config/constants.js";
 import { interpolate } from "../utils/interpolate.js";
 import { formatEmailHtml } from "../utils/format-email.js";
+import { htmlToText, renderHtmlTemplate } from "../utils/email-html.js";
 import { logger } from "../utils/logger.js";
 import { classifyFailure } from "../integrations/email/classify-failure.js";
 import type { EmailProvider } from "../integrations/email/provider.js";
-import type { CandidateProfile } from "../modules/settings/settings.schema.js";
+import type { AiModelConfig } from "../integrations/ai/model-factory.js";
+import type { SenderProfile } from "../modules/settings/settings.schema.js";
+import { buildSenderVars } from "./sender-vars.js";
+import { buildContactCustomVars, buildContactVars } from "./contact-vars.js";
 
 // ---------------------------------------------------------------------------
 // Dependency ports (injected — keeps the job unit-testable without a DB)
@@ -13,9 +16,15 @@ import type { CandidateProfile } from "../modules/settings/settings.schema.js";
 
 export interface ContactRow {
   id: number;
-  companyName: string;
+  companyName: string | null;
   location: string | null;
   email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  /** Extra spreadsheet columns ({{key}} → value). */
+  customFields?: Record<string, unknown> | null;
   status: string;
   retryCount: number;
   lastContactedAt?: Date | null;
@@ -30,6 +39,9 @@ export interface CampaignPort {
     language?: string;
     aiEnabled?: boolean;
     aiInstructions?: string | null;
+    /** null = the user's default AI provider / that provider's saved model. */
+    aiProvider?: string | null;
+    aiModel?: string | null;
   } | null>;
   setState(state: "RUNNING" | "PAUSED" | "STOPPED" | "IDLE"): Promise<unknown>;
   markContactProcessing(id: number): Promise<void>;
@@ -41,30 +53,45 @@ export interface CampaignPort {
   incQuota(date: Date): Promise<unknown>;
 }
 
-export interface TemplatePort {
-  pickRandomActive(options?: { isFollowup?: boolean }): Promise<{ id: number; subject: string; body: string; resumeId?: number | null } | undefined | null>;
+export interface PickedTemplate {
+  id: number;
+  subject: string;
+  body: string;
+  /** "html" = a sanitized HTML design; anything else is plain text. */
+  format?: string | null;
+  documentId?: number | null;
 }
 
-export interface ResumeAttachment {
+export interface TemplatePort {
+  /** The campaign's next template in rotation (see templatesRepo.pickForCampaign). */
+  pickForCampaign(options?: { isFollowup?: boolean }): Promise<PickedTemplate | undefined | null>;
+}
+
+export interface DocumentAttachment {
   filename: string;
   path: string;
 }
 
 export interface SettingsPort {
-  getGeminiKey(): Promise<string>;
-  getCandidateProfile(): Promise<CandidateProfile>;
-  buildSignature(profile: CandidateProfile): string;
-  getResumeAttachment?(resumeId?: number | null): Promise<ResumeAttachment | null>;
-  getResumePath(resumeId?: number | null): Promise<string | null>;
+  /** Provider, key and model for the campaign's choice; null when no matching key is saved. */
+  getAiConfig(choice: { provider: string | null; model: string | null }): Promise<AiModelConfig | null>;
+  getSenderProfile(): Promise<SenderProfile>;
+  buildSignature(profile: SenderProfile): string;
+  /** The template's document as an attachment; null when it has none or it was deleted. */
+  getDocumentAttachment(documentId?: number | null): Promise<DocumentAttachment | null>;
   /** Custom "My Profile" fields as template variables ({{key}} → value). */
   getProfileVars?(): Promise<Record<string, string>>;
 }
 
 export interface PersonalizeFn {
   (input: {
+    /** The template as written, {{placeholders}} unfilled; `values` fill them. */
     template: { subject: string; body: string };
-    vars: { company: string; location: string; candidate: { name: string; email?: string } };
-    apiKey?: string;
+    vars: { company: string; location: string; firstName?: string; sender: { name: string; email?: string } };
+    values?: Record<string, string>;
+    /** The sender's own values: hosts named here may appear in the email. */
+    trustedText?: string[];
+    ai?: AiModelConfig;
     language?: string;
     instructions?: string;
   }): Promise<{ subject: string; body: string; aiUsed: boolean }>;
@@ -150,7 +177,7 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
 
   // Pick a template: first-time contacts never get follow-up templates
   const isFollowup = !!(contact.sentAt || contact.lastContactedAt);
-  const template = await deps.templates.pickRandomActive({ isFollowup });
+  const template = await deps.templates.pickForCampaign({ isFollowup });
   if (!template) {
     logger.warn({ contactId }, "send-email: no active template available");
     await deps.logs.create({
@@ -167,63 +194,32 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
     return { outcome: "skipped" };
   }
 
-  // Build the fully-rendered template (signature/name/company/location), then
-  // let Gemini personalize on top (with template fallback inside personalize()).
-  const profile = await deps.settings.getCandidateProfile();
+  // Build the fully-rendered template (signature/name/company/location), then — for
+  // plain-text templates — let the AI personalize on top (with template fallback inside
+  // personalize()). HTML designs are never rewritten by the AI.
+  const profile = await deps.settings.getSenderProfile();
   const signature = deps.settings.buildSignature(profile);
-  const userRole = profile.role?.trim() || "the open role";
-  const userExperience = profile.experience?.trim() || "";
-  const userSkills = profile.skills
-    ? Array.isArray(profile.skills)
-      ? profile.skills.filter(Boolean).join(", ")
-      : profile.skills.trim()
-    : "";
 
-  // Custom profile fields go first so the built-in variables always win.
   const customVars = (await deps.settings.getProfileVars?.()) ?? {};
+  // Order, lowest first: the contact's extra columns (blank cells render as ""), My Profile
+  // custom fields, then a filled-in column of the same name, since it's specific to this
+  // contact. Built-in contact and sender variables always win.
+  const contactCustom = buildContactCustomVars(contact);
+  const filledContactCustom = Object.fromEntries(Object.entries(contactCustom).filter(([, v]) => v.trim() !== ""));
   const flatVars: Record<string, string> = {
+    ...contactCustom,
     ...customVars,
-    company: contact.companyName,
-    location: contact.location ?? "",
-    candidateName: profile.name ?? "",
-    name: profile.name ?? "",
-    candidateEmail: profile.email ?? "",
-    email: profile.email ?? "",
-    phone: profile.phone ?? "",
-    role: userRole,
-    targetRole: userRole,
-    experience: userExperience,
-    skills: userSkills,
-    linkedin: profile.linkedin ?? "",
-    LinkedIn: profile.linkedin ?? "",
-    github: profile.github ?? "",
-    GitHub: profile.github ?? "",
-    portfolio: profile.portfolio ?? "",
-    Portfolio: profile.portfolio ?? "",
-    signature,
+    ...filledContactCustom,
+    ...buildContactVars(contact),
+    ...buildSenderVars(profile, signature),
   };
-  const rendered = {
-    subject: interpolate(template.subject, flatVars),
-    body: interpolate(template.body, flatVars),
-  };
+  // The sender's own values: links and domains named here may appear in an AI-written email.
+  const trustedText = [...Object.values(customVars), ...Object.values(buildSenderVars(profile, signature))];
 
-  // AI enhancement is per campaign; with it off the rendered template is sent as written.
-  const apiKey = settings?.aiEnabled === false ? "" : await deps.settings.getGeminiKey();
-  const personalized = await deps.personalize({
-    template: rendered,
-    vars: {
-      company: contact.companyName,
-      location: contact.location ?? "",
-      candidate: { name: profile.name ?? "", email: profile.email },
-    },
-    apiKey: apiKey || undefined,
-    language: settings?.language,
-    instructions: settings?.aiInstructions ?? undefined,
-  });
-
-  const subject = personalized.subject;
-  const body = personalized.body;
-  const aiUsed = personalized.aiUsed;
+  const isHtml = template.format === "html";
+  const { subject, body, aiUsed } = isHtml
+    ? renderHtmlEmail(template, flatVars)
+    : await renderTextEmail(template, flatVars, { contact, profile, settings, deps, trustedText });
 
   // DRAFT mode: generate + log only, do not send; leave contact PENDING.
   if (mode === "DRAFT") {
@@ -243,20 +239,16 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
   // TEST → testEmail; LIVE → real recipient.
   const recipient = mode === "TEST" ? (settings!.testEmail as string) : contact.email;
 
-  let attachment: ResumeAttachment | null = null;
-  if (deps.settings.getResumeAttachment) {
-    attachment = await deps.settings.getResumeAttachment(template.resumeId);
-  } else {
-    const resumePath = await deps.settings.getResumePath(template.resumeId);
-    if (resumePath) {
-      attachment = { filename: path.basename(resumePath), path: resumePath };
-    }
-  }
+  const attachment = await deps.settings.getDocumentAttachment(template.documentId);
   const attachments = attachment ? [attachment] : undefined;
 
   try {
     const provider = await deps.getProvider();
-    await provider.send({ to: recipient, subject, html: formatEmailHtml(body), attachments });
+    // HTML designs go out as written; plain text is formatted into simple HTML. Both
+    // carry a plain-text alternative.
+    const html = isHtml ? body : formatEmailHtml(body);
+    const text = isHtml ? htmlToText(body) : body;
+    await provider.send({ to: recipient, subject, html, text, attachments });
 
     await deps.logs.create({
       contactId,
@@ -351,4 +343,64 @@ export async function sendEmailJob(contactId: number, deps: SendEmailDeps): Prom
     });
     return { outcome: "retry" };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
+
+interface RenderedEmail {
+  subject: string;
+  body: string;
+  aiUsed: boolean;
+}
+
+/**
+ * HTML design: variable values are HTML-escaped and the result is sanitized again
+ * right before sending. AI personalization is skipped so the design stays intact.
+ * The subject is plain text.
+ */
+function renderHtmlEmail(template: PickedTemplate, vars: Record<string, string>): RenderedEmail {
+  return {
+    subject: interpolate(template.subject, vars),
+    body: renderHtmlTemplate(template.body, vars),
+    aiUsed: false,
+  };
+}
+
+/** Plain text: fill in the variables, then let the campaign's AI personalize on top. */
+async function renderTextEmail(
+  template: PickedTemplate,
+  vars: Record<string, string>,
+  ctx: {
+    contact: ContactRow;
+    profile: SenderProfile;
+    settings: Awaited<ReturnType<CampaignPort["getSettings"]>>;
+    deps: SendEmailDeps;
+    trustedText: string[];
+  },
+): Promise<RenderedEmail> {
+  const { contact, profile, settings, deps, trustedText } = ctx;
+
+  // AI enhancement is per campaign; with it off, or with no key saved for the chosen
+  // provider, the rendered template is sent as written.
+  const ai = settings?.aiEnabled === false
+    ? null
+    : await deps.settings.getAiConfig({ provider: settings?.aiProvider ?? null, model: settings?.aiModel ?? null });
+  // The template goes to personalize() unfilled: the model sees {{placeholders}}, and the
+  // contact's values only in the prompt's fenced data block. personalize() fills them in.
+  return deps.personalize({
+    template: { subject: template.subject, body: template.body },
+    values: vars,
+    trustedText,
+    vars: {
+      company: contact.companyName ?? "",
+      location: contact.location ?? "",
+      firstName: contact.firstName ?? "",
+      sender: { name: profile.name ?? "", email: profile.email },
+    },
+    ai: ai ?? undefined,
+    language: settings?.language,
+    instructions: settings?.aiInstructions ?? undefined,
+  });
 }

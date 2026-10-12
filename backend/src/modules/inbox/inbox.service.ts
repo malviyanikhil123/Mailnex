@@ -34,6 +34,9 @@ export interface InboxJobProgress {
 
 export const inboxJobProgress = new Map<string, InboxJobProgress>();
 
+/** jobId → userId that started it, so one user cannot poll another user's job. */
+const inboxJobOwners = new Map<string, number>();
+
 /** userId → in-flight jobId, so a double-clicked button does not open a second IMAP session. */
 const inboxManualRuns = new Map<number, string>();
 
@@ -44,6 +47,7 @@ function startJob(userId: number, kind: "sync" | "classify"): { jobId: string; f
   }
   const jobId = randomUUID();
   inboxManualRuns.set(userId, jobId);
+  inboxJobOwners.set(jobId, userId);
   inboxJobProgress.set(jobId, { jobId, kind, phase: "starting", processed: 0, total: 0, done: false });
   return { jobId, fresh: true };
 }
@@ -52,7 +56,10 @@ function finishJob(userId: number, jobId: string, patch: Partial<InboxJobProgres
   const current = inboxJobProgress.get(jobId);
   if (current) inboxJobProgress.set(jobId, { ...current, ...patch, done: true });
   if (inboxManualRuns.get(userId) === jobId) inboxManualRuns.delete(userId);
-  const t = setTimeout(() => inboxJobProgress.delete(jobId), 5 * 60 * 1000);
+  const t = setTimeout(() => {
+    inboxJobProgress.delete(jobId);
+    inboxJobOwners.delete(jobId);
+  }, 5 * 60 * 1000);
   t.unref?.();
 }
 
@@ -302,15 +309,19 @@ export class InboxService {
     return { updated };
   }
 
-  /** A job status only survives on a category that actually tracks one. */
+  /**
+   * The target category must be the user's own, whether or not a job status comes
+   * with it. A job status only survives on a category that actually tracks one.
+   */
   private async resolveJobStatus(
     userId: number,
     categoryId: number | null,
     jobStatus: JobStatus | null,
   ): Promise<JobStatus | null> {
-    if (!jobStatus || categoryId === null) return null;
+    if (categoryId === null) return null;
     const category = await this.repo.getCategory(userId, categoryId);
     if (!category) throw httpError("Category not found", 404);
+    if (!jobStatus) return null;
     return category.trackSubStatus ? jobStatus : null;
   }
 
@@ -507,9 +518,10 @@ export class InboxService {
     return { jobId };
   }
 
-  getJobProgress(jobId: string): InboxJobProgress {
+  getJobProgress(userId: number, jobId: string): InboxJobProgress {
     const p = inboxJobProgress.get(jobId);
-    if (!p) throw httpError("Job not found", 404);
+    // Another user's job looks exactly like an unknown one.
+    if (!p || inboxJobOwners.get(jobId) !== userId) throw httpError("Job not found", 404);
     return p;
   }
 
@@ -585,10 +597,10 @@ export async function runClassifyForUser(
   mode: "new" | "all",
   onProgress?: (p: { phase: string; processed: number; total: number }) => void,
 ) {
-  const [{ classifyInboxJob }, { classifyMessages }, { settingsService }] = await Promise.all([
+  const [{ classifyInboxJob }, { classifyMessages }, { aiProvidersService }] = await Promise.all([
     import("../../jobs/classify-inbox.js"),
-    import("../../integrations/gemini/classifier.js"),
-    import("../settings/settings.service.js"),
+    import("../../integrations/ai/classifier.js"),
+    import("../ai-providers/ai-providers.service.js"),
   ]);
 
   return classifyInboxJob(
@@ -608,7 +620,8 @@ export async function runClassifyForUser(
         listReclassifiable: (limit) => inboxRepo.listReclassifiable(userId, limit),
         applyAssignment: (id, a) => inboxRepo.applyAssignment(userId, id, a),
       },
-      getGeminiKey: () => settingsService.getGeminiKey(userId),
+      // Inbox sorting always runs on the user's default provider and its saved model.
+      getAiConfig: () => aiProvidersService.resolve(userId),
       classifyMessages,
       progress: onProgress,
     },

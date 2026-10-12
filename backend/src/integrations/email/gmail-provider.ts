@@ -46,6 +46,7 @@ export class GmailProvider implements EmailProvider {
       to: msg.to,
       subject: msg.subject,
       html: msg.html,
+      text: msg.text,
       attachments: msg.attachments,
     });
     return { messageId: info.messageId as string };

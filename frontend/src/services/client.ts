@@ -1,5 +1,6 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { useAuth } from "../store/auth";
+import { recoverSession } from "../store/auth-sync";
 
 const baseURL =
   import.meta.env.VITE_API_URL ||
@@ -17,7 +18,7 @@ apiClient.interceptors.request.use((config) => {
 
 let refreshing: Promise<string | null> | null = null;
 
-async function refreshAccessToken(): Promise<string | null> {
+export async function refreshAccessToken(): Promise<string | null> {
   const { refreshToken, setTokens, clear } = useAuth.getState();
   if (!refreshToken) return null;
   try {
@@ -26,9 +27,16 @@ async function refreshAccessToken(): Promise<string | null> {
       accessToken: string;
       refreshToken: string;
     };
+    // Signed out (here or in another tab) while this request was in flight: don't write
+    // tokens back over that. A token changed by another tab is newer, so use it instead.
+    const current = useAuth.getState();
+    if (current.refreshToken !== refreshToken) return current.refreshToken ? current.accessToken : null;
     setTokens(accessToken, newRefresh);
     return accessToken;
   } catch {
+    // Another tab sharing this session may have rotated the token first; use its tokens.
+    const recovered = await recoverSession(refreshToken);
+    if (recovered) return recovered.accessToken;
     clear();
     return null;
   }

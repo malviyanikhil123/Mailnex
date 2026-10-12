@@ -7,7 +7,6 @@ import {
   FileText,
   Send,
   ScrollText,
-  BarChart3,
   Settings as SettingsIcon,
   Moon,
   Sun,
@@ -15,6 +14,8 @@ import {
 } from "lucide-react";
 import { useTheme } from "../store/theme";
 import { useAuth } from "../store/auth";
+import { signOutAllTabs } from "../store/auth-sync";
+import { authApi } from "../services/auth.api";
 import { PwaInstallBanner } from "../components/PwaInstallBanner";
 
 const nav = [
@@ -24,13 +25,12 @@ const nav = [
   { to: "/templates", label: "Templates", icon: FileText },
   { to: "/campaign", label: "Campaigns", icon: Send },
   { to: "/logs", label: "Logs", icon: ScrollText },
-  { to: "/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
 export function AppLayout() {
   const { dark, toggle } = useTheme();
-  const { user, clear } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -38,8 +38,11 @@ export function AppLayout() {
   const lastScrollY = useRef(0);
   const mainRef = useRef<HTMLElement>(null);
 
-  const logout = () => {
-    clear();
+  const logout = async () => {
+    // Revoke this browser's session server-side too; sign out locally (and in the other
+    // tabs) even if that fails. App clears the query cache when the user goes away.
+    await authApi.logout(useAuth.getState().refreshToken).catch(() => {});
+    signOutAllTabs();
     navigate("/login");
   };
 

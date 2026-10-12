@@ -5,8 +5,10 @@ import { useNavigate, Link } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { authApi } from "../services/auth.api";
 import { useAuth } from "../store/auth";
+import { adoptSession, alreadySignedInMessage, existingSession } from "../store/auth-sync";
 import { toast } from "../store/toast";
 import { Button, Card, Input } from "../components/ui/primitives";
+import { PasswordInput } from "../components/ui/PasswordInput";
 
 /**
  * Distinguishes "the server said no" from "the server never answered".
@@ -26,9 +28,12 @@ function loginErrorMessage(err: unknown): string {
   return "Something went wrong signing you in. Please try again.";
 }
 
+// Mirrors the backend loginSchema. The 8–72 character rule is for new passwords only;
+// older accounts may predate it, so sign-in just caps absurd lengths.
 const schema = z.object({
-  email: z.string().email("Enter a valid email"),
-  password: z.string().min(1, "Password is required"),
+  email: z.string().trim().max(254, "Email is too long").email("Enter a valid email"),
+  password: z.string().min(1, "Password is required").max(1024, "Password is too long"),
+  rememberMe: z.boolean(),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -39,12 +44,23 @@ export default function Login() {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<FormValues>({ resolver: zodResolver(schema) });
+  } = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { rememberMe: false } });
 
   const mutation = useMutation({
-    mutationFn: ({ email, password }: FormValues) => authApi.login(email, password),
-    onSuccess: (data) => {
-      setAuth(data);
+    mutationFn: async ({ email, password, rememberMe }: FormValues) => {
+      // Another tab may have signed in since this page opened: keep that account rather
+      // than replacing it (one account per browser; sign out first to switch).
+      const existing = await existingSession();
+      if (existing) return { kind: "existing" as const, session: existing };
+      return { kind: "signedIn" as const, data: await authApi.login(email, password, rememberMe) };
+    },
+    onSuccess: (result, { rememberMe }) => {
+      if (result.kind === "existing") {
+        adoptSession(result.session);
+        toast.error(alreadySignedInMessage(result.session));
+      } else {
+        setAuth({ ...result.data, rememberMe });
+      }
       navigate("/");
     },
     onError: (err) => toast.error(loginErrorMessage(err)),
@@ -65,17 +81,25 @@ export default function Login() {
         <p className="mb-5 text-sm text-gray-600 dark:text-gray-400">Automated Outreach & Cold Emailing Platform</p>
         <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
-            <Input type="email" placeholder="john@example.com" {...register("email")} />
+            <label htmlFor="login-email" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+            <Input id="login-email" type="email" autoComplete="email" placeholder="john@example.com" {...register("email")} />
             {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>}
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
-            <Input type="password" placeholder="••••••••" {...register("password")} />
+            <label htmlFor="login-password" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+            <PasswordInput id="login-password" autoComplete="current-password" placeholder="••••••••" {...register("password")} />
             {errors.password && (
               <p className="mt-1 text-xs text-red-600">{errors.password.message}</p>
             )}
           </div>
+          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-[#BAE6FD] accent-[#3B82F6] dark:accent-[#71C9CE]"
+              {...register("rememberMe")}
+            />
+            Remember me (30 days)
+          </label>
           <Button type="submit" className="w-full" disabled={mutation.isPending}>
             {mutation.isPending ? "Signing in…" : "Sign in"}
           </Button>

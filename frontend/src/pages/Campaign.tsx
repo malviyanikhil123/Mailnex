@@ -8,15 +8,13 @@ import { Modal } from "../components/ui/Modal";
 import { CampaignCard } from "../components/campaign/CampaignCard";
 import { CampaignForm } from "../components/campaign/CampaignForm";
 import { toast } from "../store/toast";
+import { errorMessage } from "../services/errors";
 import type { Campaign as CampaignRow, CampaignInput } from "../types/api";
-
-function errorMessage(err: unknown, fallback: string): string {
-  return (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback;
-}
 
 export default function Campaign() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<CampaignRow | "new" | null>(null);
+  const [formDirty, setFormDirty] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["campaigns"],
@@ -78,12 +76,14 @@ export default function Campaign() {
           title={editing === "new" ? "New campaign" : `Edit "${editing.name}"`}
           onClose={() => setEditing(null)}
           maxWidth="max-w-2xl"
+          confirmClose={formDirty && "Discard your changes to this campaign?"}
         >
           <CampaignForm
             initial={editing === "new" ? undefined : editing}
             saving={save.isPending}
             onSubmit={(input) => save.mutate(input)}
             onCancel={() => setEditing(null)}
+            onDirtyChange={setFormDirty}
           />
         </Modal>
       )}

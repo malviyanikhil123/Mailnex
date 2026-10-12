@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { sendEmailJob, type SendEmailDeps, type LogInput } from "./send-email.js";
+import type { AiModelConfig } from "../integrations/ai/model-factory.js";
+import { interpolate } from "../utils/interpolate.js";
 
 const NOW = new Date(2026, 5, 18, 10, 0, 0, 0);
 const HOUR = 3_600_000;
@@ -9,12 +11,17 @@ function makeDeps(overrides?: {
   testEmail?: string | null;
   retryCount?: number;
   sendImpl?: () => Promise<{ messageId: string }>;
-  template?: { id: number; subject: string; body: string } | null;
-  geminiKey?: string;
+  template?: { id: number; subject: string; body: string; documentId?: number | null } | null;
+  /** What the settings port resolves for the campaign's provider choice. */
+  aiConfig?: AiModelConfig | null;
   aiEnabled?: boolean;
+  aiProvider?: string | null;
+  aiModel?: string | null;
   language?: string;
   aiInstructions?: string | null;
   profileVars?: Record<string, string>;
+  customFields?: Record<string, unknown>;
+  firstName?: string | null;
 }): { deps: SendEmailDeps; logs: LogInput[]; send: ReturnType<typeof vi.fn>; campaign: any } {
   const logs: LogInput[] = [];
   const send = vi.fn(overrides?.sendImpl ?? (async () => ({ messageId: "mid-1" })));
@@ -25,6 +32,8 @@ function makeDeps(overrides?: {
       companyName: "Acme",
       location: "Berlin",
       email: "hr@acme.com",
+      firstName: overrides?.firstName,
+      customFields: overrides?.customFields ?? {},
       status: "PENDING",
       retryCount: overrides?.retryCount ?? 0,
     })),
@@ -34,6 +43,8 @@ function makeDeps(overrides?: {
       language: overrides?.language,
       aiEnabled: overrides?.aiEnabled,
       aiInstructions: overrides?.aiInstructions,
+      aiProvider: overrides?.aiProvider,
+      aiModel: overrides?.aiModel,
     })),
     setState: vi.fn(async () => ({})),
     markContactProcessing: vi.fn(async () => {}),
@@ -48,22 +59,25 @@ function makeDeps(overrides?: {
   const deps: SendEmailDeps = {
     campaign,
     templates: {
-      pickRandomActive: vi.fn(async () =>
+      pickForCampaign: vi.fn(async () =>
         overrides?.template === undefined
-          ? { id: 7, subject: "Hi {{company}}", body: "Dear {{company}} in {{location}}.\n{{signature}}" }
+          ? { id: 7, subject: "Hi {{company}}", body: "Dear {{company}} in {{location}}.\n{{signature}}", documentId: 3 }
           : overrides.template,
       ),
     },
     settings: {
-      getGeminiKey: vi.fn(async () => overrides?.geminiKey ?? ""),
-      getCandidateProfile: vi.fn(async () => ({ name: "Nikhil", email: "n@x.dev" })),
+      getAiConfig: vi.fn(async () => overrides?.aiConfig ?? null),
+      getSenderProfile: vi.fn(async () => ({ name: "Nikhil", email: "n@x.dev" })),
       buildSignature: vi.fn(() => "Regards,\nNikhil"),
-      getResumePath: vi.fn(async () => "/uploads/resume.pdf"),
+      getDocumentAttachment: vi.fn(async (documentId?: number | null) =>
+        documentId === 3 ? { filename: "Price list.pdf", path: "/uploads/documents/abc.pdf" } : null,
+      ),
       getProfileVars: vi.fn(async () => overrides?.profileVars ?? {}),
     },
+    // Like personalize() without AI: the template filled in with its values.
     personalize: vi.fn(async (input) => ({
-      subject: input.template.subject,
-      body: input.template.body,
+      subject: interpolate(input.template.subject, input.values ?? {}),
+      body: interpolate(input.template.body, input.values ?? {}),
       aiUsed: false,
     })),
     getProvider: vi.fn(async () => ({ name: "gmail", verify: vi.fn(), send })),
@@ -109,11 +123,34 @@ describe("sendEmailJob", () => {
     expect(res.outcome).toBe("sent");
     expect(send.mock.calls[0][0].to).toBe("hr@acme.com");
     expect(send.mock.calls[0][0].attachments).toEqual([
-      { filename: "resume.pdf", path: "/uploads/resume.pdf" },
+      { filename: "Price list.pdf", path: "/uploads/documents/abc.pdf" },
     ]);
+    expect(deps.settings.getDocumentAttachment).toHaveBeenCalledWith(3);
     expect(logs[0].status).toBe("SENT");
     expect(campaign.markContactSent).toHaveBeenCalledWith(1, NOW);
     expect(campaign.incQuota).toHaveBeenCalledWith(NOW);
+  });
+
+  it("template without a document: sends with no attachments", async () => {
+    const { deps, send } = makeDeps({ template: { id: 8, subject: "Hi", body: "Hello", documentId: null } });
+    const res = await sendEmailJob(1, deps);
+    expect(res.outcome).toBe("sent");
+    expect(send.mock.calls[0][0].attachments).toBeUndefined();
+  });
+
+  it("template whose document was deleted: still sends, just without the attachment", async () => {
+    const { deps, send, logs } = makeDeps({ template: { id: 9, subject: "Hi", body: "Hello", documentId: 42 } });
+    const res = await sendEmailJob(1, deps);
+    expect(res.outcome).toBe("sent");
+    expect(deps.settings.getDocumentAttachment).toHaveBeenCalledWith(42);
+    expect(send.mock.calls[0][0].attachments).toBeUndefined();
+    expect(logs[0].status).toBe("SENT");
+  });
+
+  it("DRAFT mode never looks up the attachment", async () => {
+    const { deps } = makeDeps({ mode: "DRAFT" });
+    await sendEmailJob(1, deps);
+    expect(deps.settings.getDocumentAttachment).not.toHaveBeenCalled();
   });
 
   it("Quota error → pauses campaign, leaves contact PENDING (not failed/bounced)", async () => {
@@ -203,6 +240,32 @@ describe("sendEmailJob", () => {
     expect(sent.html).not.toContain("{{");
   });
 
+  it("interpolates the {{my_*}} sender variables from My Profile", async () => {
+    const { deps, send } = makeDeps({
+      template: {
+        id: 98,
+        subject: "{{my_company}} x {{company}}",
+        body: "I'm {{my_name}} ({{my_email}}, {{my_phone}}).\n{{my_website}} | {{my_linkedin}}\n{{signature}}",
+      },
+    });
+    deps.settings.getSenderProfile = vi.fn(async () => ({
+      name: "Priya Shah",
+      company: "Northwind",
+      email: "priya@northwind.com",
+      phone: "+1 555 0100",
+      website: "https://northwind.com",
+      linkedin: "https://linkedin.com/in/priya",
+    }));
+
+    await sendEmailJob(1, deps);
+    const sent = send.mock.calls[0][0];
+    expect(sent.subject).toBe("Northwind x Acme");
+    for (const value of ["Priya Shah", "priya@northwind.com", "+1 555 0100", "https://northwind.com", "https://linkedin.com/in/priya"]) {
+      expect(sent.html).toContain(value);
+    }
+    expect(sent.html).not.toContain("{{");
+  });
+
   it("interpolates LinkedIn, GitHub, Portfolio, phone, and email variables", async () => {
     const { deps, send } = makeDeps({
       mode: "LIVE",
@@ -221,7 +284,7 @@ describe("sendEmailJob", () => {
       },
     });
 
-    deps.settings.getCandidateProfile = vi.fn(async () => ({
+    deps.settings.getSenderProfile = vi.fn(async () => ({
       name: "Alex Morgan",
       email: "alex@example.com",
       phone: "+91 9876543210",
@@ -245,18 +308,57 @@ describe("sendEmailJob", () => {
   });
 
   it("passes the campaign language and AI instructions to personalization", async () => {
-    const { deps } = makeDeps({ geminiKey: "key", language: "Hindi", aiInstructions: "Mention the offer" });
+    const ai: AiModelConfig = { provider: "google", apiKey: "key", model: "gemini-3.5-flash-lite" };
+    const { deps } = makeDeps({ aiConfig: ai, language: "Hindi", aiInstructions: "Mention the offer" });
     await sendEmailJob(1, deps);
     expect(deps.personalize).toHaveBeenCalledWith(
-      expect.objectContaining({ apiKey: "key", language: "Hindi", instructions: "Mention the offer" }),
+      expect.objectContaining({ ai, language: "Hindi", instructions: "Mention the offer" }),
     );
   });
 
-  it("with AI enhancement off, never hands the Gemini key to personalization", async () => {
-    const { deps } = makeDeps({ geminiKey: "key", aiEnabled: false });
+  it("hands personalization the template unfilled, its values and the sender's own text", async () => {
+    const { deps } = makeDeps({ firstName: "Priya" });
     await sendEmailJob(1, deps);
-    expect(deps.settings.getGeminiKey).not.toHaveBeenCalled();
-    expect(deps.personalize).toHaveBeenCalledWith(expect.objectContaining({ apiKey: undefined }));
+    const input = vi.mocked(deps.personalize).mock.calls[0][0];
+    expect(input.template).toEqual({ subject: "Hi {{company}}", body: "Dear {{company}} in {{location}}.\n{{signature}}" });
+    expect(input.values).toMatchObject({ company: "Acme", location: "Berlin", signature: "Regards,\nNikhil" });
+    expect(input.trustedText).toContain("n@x.dev");
+    expect(input.trustedText).not.toContain("Acme");
+  });
+
+  it("passes the contact and the sender (not a candidate) to personalization", async () => {
+    const { deps } = makeDeps({ firstName: "Priya" });
+    await sendEmailJob(1, deps);
+    expect(deps.personalize).toHaveBeenCalledWith(expect.objectContaining({
+      vars: { company: "Acme", location: "Berlin", firstName: "Priya", sender: { name: "Nikhil", email: "n@x.dev" } },
+    }));
+  });
+
+  it("resolves the campaign's own provider and model, null meaning the user's default", async () => {
+    const ai: AiModelConfig = { provider: "anthropic", apiKey: "key", model: "claude-sonnet-5-5" };
+    const { deps } = makeDeps({ aiConfig: ai, aiProvider: "anthropic", aiModel: "claude-sonnet-5-5" });
+    await sendEmailJob(1, deps);
+    expect(deps.settings.getAiConfig).toHaveBeenCalledWith({ provider: "anthropic", model: "claude-sonnet-5-5" });
+    expect(deps.personalize).toHaveBeenCalledWith(expect.objectContaining({ ai }));
+
+    const plain = makeDeps({ aiConfig: ai });
+    await sendEmailJob(1, plain.deps);
+    expect(plain.deps.settings.getAiConfig).toHaveBeenCalledWith({ provider: null, model: null });
+  });
+
+  it("with AI on but no key saved, sends the rendered template without AI", async () => {
+    const { deps, send } = makeDeps({ aiConfig: null });
+    await sendEmailJob(1, deps);
+    expect(deps.personalize).toHaveBeenCalledWith(expect.objectContaining({ ai: undefined }));
+    expect(send.mock.calls[0][0].subject).toBe("Hi Acme");
+  });
+
+  it("with AI enhancement off, never resolves an AI key for personalization", async () => {
+    const ai: AiModelConfig = { provider: "openai", apiKey: "key", model: "gpt-5.4-mini" };
+    const { deps } = makeDeps({ aiConfig: ai, aiEnabled: false });
+    await sendEmailJob(1, deps);
+    expect(deps.settings.getAiConfig).not.toHaveBeenCalled();
+    expect(deps.personalize).toHaveBeenCalledWith(expect.objectContaining({ ai: undefined }));
   });
 
   it("fills custom profile fields into the template but never lets them shadow built-ins", async () => {
@@ -266,5 +368,122 @@ describe("sendEmailJob", () => {
     });
     await sendEmailJob(1, deps);
     expect(send.mock.calls[0][0].subject).toBe("20% off for Acme");
+  });
+
+  it("a filled spreadsheet column beats a My Profile field of the same name; a blank one doesn't", async () => {
+    const filled = makeDeps({
+      template: { id: 7, subject: "{{offer}} / {{industry}}", body: "Hi" },
+      profileVars: { offer: "20% off" },
+      customFields: { offer: "VIP deal", industry: "Fintech" },
+    });
+    await sendEmailJob(1, filled.deps);
+    expect(filled.send.mock.calls[0][0].subject).toBe("VIP deal / Fintech");
+
+    const blank = makeDeps({
+      template: { id: 7, subject: "{{offer}} / {{industry}}", body: "Hi" },
+      profileVars: { offer: "20% off" },
+      customFields: { offer: "  ", industry: "" },
+    });
+    await sendEmailJob(1, blank.deps);
+    expect(blank.send.mock.calls[0][0].subject).toBe("20% off / ");
+  });
+
+  it("plain-text templates also send the text itself as the plain-text alternative", async () => {
+    const { deps, send } = makeDeps({ template: { id: 7, subject: "Hi", body: "Hello {{company}}" } });
+    await sendEmailJob(1, deps);
+    expect(send.mock.calls[0][0].text).toBe("Hello Acme");
+    expect(send.mock.calls[0][0].html).toContain("Hello Acme");
+  });
+
+  it("falls back to the {{var|fallback}} text when the contact has no first name", async () => {
+    const { deps, send } = makeDeps({ template: { id: 7, subject: "Hi {{first_name|there}}", body: "Hi {{first_name|there}}," } });
+    await sendEmailJob(1, deps);
+    expect(send.mock.calls[0][0].subject).toBe("Hi there");
+  });
+
+  describe("HTML templates", () => {
+    const htmlTemplate = {
+      id: 11,
+      format: "html",
+      subject: "News for {{company}} & {{first_name|friends}}",
+      body:
+        '<html><head><title>x</title></head><body><table><tr><td style="color:#111">' +
+        "<p>Hi {{first_name|there}} at {{company}}</p>" +
+        '<p><a href="{{contact_website}}">Your site</a> · <a href="{{my_website}}">Book a call</a></p>' +
+        "<p>{{signature}}</p></td></tr></table></body></html>",
+      documentId: null,
+    };
+
+    function htmlDeps(over: Parameters<typeof makeDeps>[0] = {}) {
+      const made = makeDeps({ template: htmlTemplate, ...over });
+      made.campaign.getContact.mockResolvedValue({
+        id: 1,
+        companyName: `<b>Acme</b> & "Sons"`,
+        location: "Berlin",
+        email: "hr@acme.com",
+        firstName: "<script>alert(1)</script>",
+        website: "javascript:alert(1)",
+        customFields: {},
+        status: "PENDING",
+        retryCount: 0,
+      });
+      made.deps.settings.getSenderProfile = vi.fn(async () => ({ name: "Nikhil", email: "n@x.dev", website: "https://nikhil.dev/?a=1&b=2" }));
+      return made;
+    }
+
+    it("escapes contact values, re-sanitizes URLs and keeps the design (no formatting wrapper)", async () => {
+      const { deps, send } = htmlDeps();
+      const res = await sendEmailJob(1, deps);
+      expect(res.outcome).toBe("sent");
+      const { html, subject } = send.mock.calls[0][0];
+      expect(html.startsWith("<!DOCTYPE html>\n<html>")).toBe(true);
+      expect(html).toContain("Hi &lt;script&gt;alert(1)&lt;/script&gt; at &lt;b&gt;Acme&lt;/b&gt; &amp; \"Sons\"");
+      expect(html).not.toContain("<script");
+      expect(html).not.toContain("<b>Acme");
+      expect(html).not.toMatch(/javascript:/i);
+      expect(html).toContain("<a>Your site</a>");
+      expect(html).toContain('<a href="https://nikhil.dev/?a=1&amp;b=2">Book a call</a>');
+      expect(html).toContain("Regards,<br />Nikhil");
+      expect(html).toMatch(/<td style="color:\s?#111;?">/);
+      // The subject stays plain text: no HTML escaping.
+      expect(subject).toBe(`News for <b>Acme</b> & "Sons" & <script>alert(1)</script>`);
+    });
+
+    it("sends a plain-text alternative generated from the HTML", async () => {
+      const { deps, send } = htmlDeps();
+      await sendEmailJob(1, deps);
+      const { text } = send.mock.calls[0][0];
+      expect(text).toContain("Hi <script>alert(1)</script> at <b>Acme</b> & \"Sons\"");
+      expect(text).toContain("Book a call (https://nikhil.dev/?a=1&b=2)");
+      expect(text).toContain("Regards,\nNikhil");
+      expect(text).not.toMatch(/<p>|<table|<td/);
+    });
+
+    it("skips AI personalization even when the campaign has AI on, and logs aiUsed: false", async () => {
+      const ai: AiModelConfig = { provider: "openai", apiKey: "key", model: "gpt-5.4-mini" };
+      const { deps, logs } = htmlDeps({ aiConfig: ai, aiEnabled: true });
+      await sendEmailJob(1, deps);
+      expect(deps.personalize).not.toHaveBeenCalled();
+      expect(deps.settings.getAiConfig).not.toHaveBeenCalled();
+      expect(logs[0]).toMatchObject({ status: "SENT", aiUsed: false, templateId: 11 });
+    });
+
+    it("DRAFT mode logs the rendered, sanitized HTML", async () => {
+      const { deps, logs, send } = htmlDeps({ mode: "DRAFT" });
+      await sendEmailJob(1, deps);
+      expect(send).not.toHaveBeenCalled();
+      expect(logs[0].status).toBe("GENERATED");
+      expect(logs[0].body).toContain("Hi &lt;script&gt;");
+      expect(logs[0].body).not.toContain("<script");
+    });
+  });
+
+  it("spreadsheet columns never override built-in variables", async () => {
+    const { deps, send } = makeDeps({
+      template: { id: 7, subject: "{{company}} {{my_name}}", body: "Hi" },
+      customFields: { company: "WRONG", my_name: "WRONG" },
+    });
+    await sendEmailJob(1, deps);
+    expect(send.mock.calls[0][0].subject).toBe("Acme Nikhil");
   });
 });

@@ -36,6 +36,13 @@
       "when": 1791445575137,
       "tag": "0003_multi_campaign",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791620553795,
+      "tag": "0005_generic_outreach",
+      "breakpoints": true
     }
   ]
 }

@@ -329,9 +329,18 @@ function CategoryFormModal({
   const [description, setDescription] = useState(category?.description ?? "");
   const [color, setColor] = useState(category?.color ?? PRESET_COLORS[2]!);
   const [trackSubStatus, setTrackSubStatus] = useState(category?.trackSubStatus ?? false);
+  const dirty =
+    name !== (category?.name ?? "") ||
+    description !== (category?.description ?? "") ||
+    color !== (category?.color ?? PRESET_COLORS[2]!) ||
+    trackSubStatus !== (category?.trackSubStatus ?? false);
 
   return (
-    <Modal title={category ? `Edit "${category.name}"` : "New category"} onClose={onClose}>
+    <Modal
+      title={category ? `Edit "${category.name}"` : "New category"}
+      onClose={onClose}
+      confirmClose={dirty && "Discard your changes to this category?"}
+    >
       <div className="space-y-3">
         <label className="block">
           <span className="mb-1 block text-xs font-semibold text-gray-700 dark:text-gray-300">Name</span>

@@ -202,6 +202,16 @@ describe("InboxService manual assignment", () => {
       .rejects.toMatchObject({ statusCode: 404 });
   });
 
+  it("rejects another user's category even without a job status", async () => {
+    const repo = fakeRepo({ getCategory: vi.fn(async () => null) });
+    const svc = new InboxService({ repo });
+    await expect(svc.setCategory(USER, 1, 77, null)).rejects.toMatchObject({ statusCode: 404 });
+    await expect(svc.bulkSetCategory(USER, { ids: [1, 2], categoryId: 77 }))
+      .rejects.toMatchObject({ statusCode: 404 });
+    expect(repo.getCategory).toHaveBeenCalledWith(USER, 77);
+    expect(repo.setManualAssignment).not.toHaveBeenCalled();
+  });
+
   it("reports how many rows a bulk move changed", async () => {
     const svc = new InboxService({ repo: fakeRepo() });
     await expect(svc.bulkSetCategory(USER, { ids: [1, 2, 3], categoryId: 10 }))
@@ -340,7 +350,7 @@ describe("InboxService job launching", () => {
     const { jobId } = svc.startSync(USER);
     await new Promise((r) => setTimeout(r, 10));
 
-    const progress = svc.getJobProgress(jobId);
+    const progress = svc.getJobProgress(USER, jobId);
     expect(progress.done).toBe(true);
     expect(progress.phase).toBe("failed");
     expect(progress.error).toMatch(/app password/i);
@@ -354,14 +364,24 @@ describe("InboxService job launching", () => {
     const { jobId } = svc.startSync(USER);
     await new Promise((r) => setTimeout(r, 10));
 
-    const progress = svc.getJobProgress(jobId);
+    const progress = svc.getJobProgress(USER, jobId);
     expect(progress.done).toBe(true);
     expect(progress.result).toMatchObject({ inserted: 4 });
   });
 
+  it("404s when another user polls the job", async () => {
+    const svc = new InboxService({
+      repo: fakeRepo(),
+      runSync: async () => ({ outcome: "ok", inserted: 1 }),
+    });
+    const { jobId } = svc.startSync(USER);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(() => svc.getJobProgress(USER + 1, jobId)).toThrowError(expect.objectContaining({ statusCode: 404 }));
+  });
+
   it("404s for an unknown jobId, which the UI reads as done-or-lost", () => {
     const svc = new InboxService({ repo: fakeRepo() });
-    expect(() => svc.getJobProgress("nope")).toThrowError(expect.objectContaining({ statusCode: 404 }));
+    expect(() => svc.getJobProgress(USER, "nope")).toThrowError(expect.objectContaining({ statusCode: 404 }));
   });
 });
 

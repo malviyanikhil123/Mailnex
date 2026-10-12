@@ -5,14 +5,25 @@ import { useNavigate, Link } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { authApi } from "../services/auth.api";
 import { useAuth } from "../store/auth";
+import { adoptSession, alreadySignedInMessage, existingSession } from "../store/auth-sync";
 import { toast } from "../store/toast";
 import { Button, Card, Input } from "../components/ui/primitives";
+import { PasswordInput } from "../components/ui/PasswordInput";
+
+// bcrypt only uses the first 72 bytes of a password; mirrors the backend registerSchema.
+const PASSWORD_MAX_BYTES = 72;
 
 const schema = z
   .object({
-    name: z.string().min(1, "Name is required"),
-    email: z.string().email("Enter a valid email"),
-    password: z.string().min(6, "Password must be at least 6 characters"),
+    name: z.string().trim().min(1, "Name is required").max(100, "Name must be at most 100 characters"),
+    email: z.string().trim().max(254, "Email is too long").email("Enter a valid email"),
+    password: z
+      .string()
+      .min(8, "Password must be at least 8 characters")
+      .refine(
+        (p) => new TextEncoder().encode(p).length <= PASSWORD_MAX_BYTES,
+        `Password must be at most ${PASSWORD_MAX_BYTES} characters`,
+      ),
     confirmPassword: z.string().min(1, "Please confirm your password"),
   })
   .refine((data) => data.password === data.confirmPassword, {
@@ -32,11 +43,20 @@ export default function Register() {
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
 
   const mutation = useMutation({
-    mutationFn: ({ name, email, password }: FormValues) =>
-      authApi.register(name, email, password),
-    onSuccess: (data) => {
-      setAuth(data);
-      toast.success("Account created successfully!");
+    mutationFn: async ({ name, email, password }: FormValues) => {
+      // Another tab may have signed in since this page opened: keep that account (see Login).
+      const existing = await existingSession();
+      if (existing) return { kind: "existing" as const, session: existing };
+      return { kind: "registered" as const, data: await authApi.register(name, email, password) };
+    },
+    onSuccess: (result) => {
+      if (result.kind === "existing") {
+        adoptSession(result.session);
+        toast.error(alreadySignedInMessage(result.session));
+      } else {
+        setAuth(result.data);
+        toast.success("Account created successfully!");
+      }
       navigate("/");
     },
     onError: (err: any) => {
@@ -59,25 +79,33 @@ export default function Register() {
         <p className="mb-5 text-sm text-gray-600 dark:text-gray-400">Automated Outreach & Cold Emailing Platform</p>
         <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</label>
-            <Input type="text" placeholder="John Doe" {...register("name")} />
+            <label htmlFor="register-name" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</label>
+            <Input id="register-name" type="text" autoComplete="name" placeholder="John Doe" {...register("name")} />
             {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name.message}</p>}
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
-            <Input type="email" placeholder="john@example.com" {...register("email")} />
+            <label htmlFor="register-email" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+            <Input id="register-email" type="email" autoComplete="email" placeholder="john@example.com" {...register("email")} />
             {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>}
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
-            <Input type="password" placeholder="••••••••" {...register("password")} />
-            {errors.password && (
+            <label htmlFor="register-password" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+            <PasswordInput id="register-password" autoComplete="new-password" placeholder="••••••••" {...register("password")} />
+            {errors.password ? (
               <p className="mt-1 text-xs text-red-600">{errors.password.message}</p>
+            ) : (
+              <p className="mt-1 text-xs text-gray-500">8 to {PASSWORD_MAX_BYTES} characters.</p>
             )}
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Confirm Password</label>
-            <Input type="password" placeholder="••••••••" {...register("confirmPassword")} />
+            <label htmlFor="register-confirm-password" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Confirm Password</label>
+            <PasswordInput
+              id="register-confirm-password"
+              autoComplete="new-password"
+              placeholder="••••••••"
+              toggleLabel="Show confirmation password"
+              {...register("confirmPassword")}
+            />
             {errors.confirmPassword && (
               <p className="mt-1 text-xs text-red-600">{errors.confirmPassword.message}</p>
             )}

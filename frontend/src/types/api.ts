@@ -7,6 +7,8 @@ export interface User {
 export interface LoginResponse {
   accessToken: string;
   refreshToken: string;
+  /** Echoes the "Remember me" choice; carried through every token refresh. */
+  rememberMe: boolean;
   user: User;
 }
 
@@ -20,10 +22,18 @@ export type ContactStatus =
 
 export interface Contact {
   id: number;
-  companyName: string;
-  location: string | null;
   email: string;
+  firstName: string | null;
+  lastName: string | null;
+  companyName: string | null;
+  phone: string | null;
+  website: string | null;
+  location: string | null;
+  /** Legacy single-name field of older contacts; imports fill first/last name. */
   contactPerson: string | null;
+  /** Extra spreadsheet columns, usable in templates as {{key}}. */
+  customFields: Record<string, string>;
+  importId: number | null;
   status: ContactStatus;
   retryCount: number;
   nextRetryAt: string | null;
@@ -49,31 +59,79 @@ export interface ImportSummary {
   skippedRows: number;
   duplicateRows: number;
   invalidRows: number;
+  /** Keys of the extra columns stored on this import's contacts ({{key}} variables). */
+  customFieldKeys?: string[];
   createdAt: string;
   /** Contacts that currently belong to this import (listing endpoint only). */
   contactCount?: number;
   pendingCount?: number;
 }
 
-export interface Resume {
+/** A file a template can attach to its emails (Settings → Documents). */
+export interface UserDocument {
   id: number;
   name: string;
+  /** Original file name, also used as the attachment name. */
   fileName: string;
   createdAt: string;
 }
+
+/** Upload limits, enforced by the server and mirrored in the UI. */
+export interface DocumentLimits {
+  maxDocuments: number;
+  maxBytes: number;
+  /** Allowed extensions, lower-case without the dot. */
+  extensions: string[];
+}
+
+export interface DocumentList {
+  documents: UserDocument[];
+  limits: DocumentLimits;
+}
+
+/** "text": plain text, formatted into simple HTML when sent. "html": a sanitized HTML design. */
+export type TemplateFormat = "text" | "html";
 
 export interface Template {
   id: number;
   name: string;
   subject: string;
   body: string;
+  format: TemplateFormat;
   category: string;
   version: number;
+  /** Legacy "selected for sending" flag; campaigns choose their own templates, nothing reads it. */
   active: boolean;
-  resumeId?: number | null;
-  resume?: Resume | null;
+  documentId?: number | null;
+  document?: Pick<UserDocument, "id" | "name" | "fileName"> | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** A template filled with sample values (POST /templates/:id/preview). */
+export interface TemplatePreview {
+  subject: string;
+  body: string;
+  format: TemplateFormat;
+}
+
+/** "Generate with AI" request for an HTML design; nothing is saved. */
+export interface GenerateHtmlInput {
+  description: string;
+  tone?: string;
+  /** Hex color like #2563eb. */
+  brandColor?: string;
+  includeVariables?: boolean;
+  /** null = the user's default AI provider. */
+  provider?: AiProviderId | null;
+  model?: string | null;
+}
+
+export interface GeneratedHtml {
+  /** Sanitized HTML document. */
+  html: string;
+  /** Suggested subject line (the design's <title>), when the AI gave one. */
+  subject?: string;
 }
 
 export type CampaignMode = "DRAFT" | "TEST" | "LIVE";
@@ -94,6 +152,10 @@ export interface CampaignInput {
   language: string;
   aiEnabled: boolean;
   aiInstructions: string | null;
+  /** null = the user's default AI provider. */
+  aiProvider: AiProviderId | null;
+  /** null = the provider's saved model; only set together with aiProvider. */
+  aiModel: string | null;
 }
 
 export interface Campaign extends CampaignInput {
@@ -103,6 +165,8 @@ export interface Campaign extends CampaignInput {
   quotaToday: number;
   nextScheduledAt: string | null;
   countsByStatus: Record<string, number>;
+  /** AI is on for this campaign and the user has a key for its provider (any key when none is picked). */
+  aiActive: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -114,6 +178,24 @@ export interface SenderAccount {
   dailyLimit: number;
   active: boolean;
   createdAt: string;
+}
+
+export type AiProviderId = "openai" | "anthropic" | "google" | "groq";
+
+/** One AI provider as GET /ai-providers lists it. The API key itself is never returned. */
+export interface AiProviderStatus {
+  provider: AiProviderId;
+  label: string;
+  configured: boolean;
+  /** Last 4 characters of the saved key. */
+  keyLast4: string | null;
+  /** The saved model, or the recommended one while not configured. */
+  defaultModel: string;
+  isDefault: boolean;
+  /** Curated models; the first is the recommended one. */
+  models: string[];
+  keyUrl: string;
+  updatedAt: string | null;
 }
 
 export interface ProfileField {
@@ -164,25 +246,25 @@ export interface TrendPoint {
   failed: number;
 }
 
-export interface CandidateProfile {
+/** The sender's "My Profile"; templates use it as {{my_name}}, {{my_company}}, … {{signature}}. */
+export interface SenderProfile {
   name?: string;
-  phone?: string;
+  company?: string;
   email?: string;
-  role?: string;
-  experience?: string;
-  skills?: string[];
+  phone?: string;
+  website?: string;
   linkedin?: string;
-  github?: string;
-  portfolio?: string;
+  /** Multi-line; when empty the server builds one from name, company, phone and website. */
+  signature?: string;
 }
 
 export interface PublicSettings {
   emailProvider: string;
   gmailEmail: string | null;
   gmailConfigured: boolean;
-  geminiConfigured: boolean;
-  candidate: CandidateProfile;
-  resumeFileName: string | null;
+  /** True when at least one AI provider key is saved. */
+  aiConfigured: boolean;
+  profile: SenderProfile;
   /** Daily cap of the primary Gmail, shared by every campaign sending from it. */
   senderDailyLimit: number;
   profileFields: ProfileField[];

@@ -1,4 +1,3 @@
-import * as path from "path";
 import { encrypt, decrypt } from "../../utils/crypto.js";
 import { logger } from "../../utils/logger.js";
 import { LIMITS } from "../../config/constants.js";
@@ -7,10 +6,12 @@ import {
   type ISettingsRepo,
   type ProfileField,
 } from "./settings.repo.js";
+import { aiProvidersService } from "../ai-providers/ai-providers.service.js";
+import { smtpVerify, verifyGmailOrThrow, type VerifyCreds } from "../../integrations/email/verify-gmail.js";
 import type {
   UpdateGmailInput,
-  UpdateGeminiInput,
-  CandidateProfile,
+  SenderProfile,
+  SenderProfileInput,
   UpdateSendingInput,
   ProfileFieldsInput,
 } from "./settings.schema.js";
@@ -25,16 +26,25 @@ export interface PublicSettings {
   emailProvider: string;
   gmailEmail: string | null;
   gmailConfigured: boolean;
-  geminiConfigured: boolean;
-  candidate: CandidateProfile;
-  resumeFileName: string | null;
+  /** True when the user has saved an API key for at least one AI provider. */
+  aiConfigured: boolean;
+  profile: SenderProfile;
   /** Daily cap of the primary Gmail, shared by every campaign sending from it. */
   senderDailyLimit: number;
   profileFields: Pick<ProfileField, "key" | "label" | "value">[];
 }
 
+/** Whether the user has any AI provider key (keys live in the ai-providers module). */
+export interface AiKeysLookup {
+  hasAny(userId: number): Promise<boolean>;
+}
+
 export class SettingsService {
-  constructor(private repo: ISettingsRepo = settingsRepo) {}
+  constructor(
+    private repo: ISettingsRepo = settingsRepo,
+    private aiKeys: AiKeysLookup = aiProvidersService,
+    private verify: VerifyCreds = smtpVerify,
+  ) {}
 
   // ---- secret reads (decrypt) ------------------------------------------------
 
@@ -44,39 +54,37 @@ export class SettingsService {
     return { email: app.gmailEmail, password: decrypt(app.gmailAppPasswordEnc) };
   }
 
-  async getGeminiKey(userId: number): Promise<string> {
-    const app = await this.repo.getApp(userId);
-    if (!app?.geminiApiKeyEnc) return "";
-    return decrypt(app.geminiApiKeyEnc);
-  }
-
   async getEmailProviderName(userId: number): Promise<string> {
     const app = await this.repo.getApp(userId);
     return app?.emailProvider ?? "gmail";
   }
 
-  // ---- candidate profile -----------------------------------------------------
+  // ---- sender profile ("My Profile") -----------------------------------------
 
-  async getCandidateProfile(userId: number): Promise<CandidateProfile> {
+  async getSenderProfile(userId: number): Promise<SenderProfile> {
     const app = await this.repo.getApp(userId);
     if (!app?.candidateProfile) return {};
     try {
-      return JSON.parse(app.candidateProfile) as CandidateProfile;
+      const profile = JSON.parse(app.candidateProfile) as SenderProfile | null;
+      if (!profile || typeof profile !== "object") return {};
+      // Job-seeker profiles kept their site under "portfolio"; offer it as the website
+      // until the user saves one (an explicitly emptied website stays empty).
+      if (profile.website === undefined && profile.portfolio) profile.website = profile.portfolio;
+      return profile;
     } catch {
-      logger.warn({ userId }, "candidate profile JSON is corrupt — returning empty profile");
+      logger.warn({ userId }, "sender profile JSON is corrupt — returning empty profile");
       return {};
     }
   }
 
-  buildSignature(profile: CandidateProfile): string {
-    const lines = ["Regards,", ""];
-    if (profile.name) lines.push(profile.name);
-    if (profile.role) lines.push(profile.role);
-    if (profile.phone) lines.push(`Phone: ${profile.phone}`);
-    if (profile.email) lines.push(`Email: ${profile.email}`);
-    if (profile.linkedin) lines.push(`LinkedIn: ${profile.linkedin}`);
-    if (profile.github) lines.push(`GitHub: ${profile.github}`);
-    if (profile.portfolio) lines.push(`Portfolio: ${profile.portfolio}`);
+  /** The user's own signature, or a default built from name, company, phone and website. */
+  buildSignature(profile: SenderProfile): string {
+    const custom = profile.signature?.trim();
+    if (custom) return custom;
+    const lines = ["Best regards,"];
+    for (const value of [profile.name, profile.company, profile.phone, profile.website]) {
+      if (value?.trim()) lines.push(value.trim());
+    }
     return lines.join("\n");
   }
 
@@ -103,66 +111,28 @@ export class SettingsService {
     return app?.senderDailyLimit ?? LIMITS.PRIMARY_SENDER_DAILY;
   }
 
-  async getResumePath(userId: number): Promise<string | null> {
-    const app = await this.repo.getApp(userId);
-    return app?.resumePath ?? null;
-  }
-
   // ---- updates ---------------------------------------------------------------
 
+  /** Logs in to Gmail with the credentials first (as adding a sender does); nothing is
+   *  stored when Gmail rejects them. */
   async updateGmail(userId: number, input: UpdateGmailInput): Promise<void> {
+    await verifyGmailOrThrow(this.verify, input.email, input.appPassword);
     await this.repo.patchApp(userId, {
       gmailEmail: input.email,
       gmailAppPasswordEnc: encrypt(input.appPassword),
     });
   }
 
-  async updateGemini(userId: number, input: UpdateGeminiInput): Promise<void> {
-    await this.repo.patchApp(userId, { geminiApiKeyEnc: encrypt(input.apiKey) });
-  }
-
-  async updateCandidate(userId: number, profile: CandidateProfile): Promise<CandidateProfile> {
-    const current = await this.getCandidateProfile(userId);
-    const merged = { ...current, ...profile };
+  /** Merges the submitted fields into the stored profile; legacy keys are kept as they are. */
+  async updateProfile(userId: number, input: SenderProfileInput): Promise<SenderProfile> {
+    const current = await this.getSenderProfile(userId);
+    const merged = { ...current, ...input };
     await this.repo.patchApp(userId, { candidateProfile: JSON.stringify(merged) });
     return merged;
   }
 
-  async setResumePath(userId: number, resumePath: string): Promise<void> {
-    await this.repo.patchApp(userId, { resumePath });
-  }
-
   async updateSending(userId: number, input: UpdateSendingInput): Promise<void> {
     await this.repo.patchApp(userId, { senderDailyLimit: input.senderDailyLimit });
-  }
-
-  async listResumes(userId: number) {
-    return this.repo.listResumes(userId);
-  }
-
-  async getResumeAttachment(
-    userId: number,
-    resumeId?: number | null,
-  ): Promise<{ filename: string; path: string } | null> {
-    if (resumeId) {
-      const resume = await this.repo.getResume(userId, resumeId);
-      if (resume) {
-        return { filename: resume.fileName, path: resume.filePath };
-      }
-    }
-    const app = await this.repo.getApp(userId);
-    if (app?.resumePath) {
-      return { filename: path.basename(app.resumePath), path: app.resumePath };
-    }
-    return null;
-  }
-
-  async addResume(userId: number, name: string, fileName: string, filePath: string) {
-    return this.repo.addResume(userId, name, fileName, filePath);
-  }
-
-  async deleteResume(userId: number, resumeId: number) {
-    return this.repo.deleteResume(userId, resumeId);
   }
 
   // ---- public view -----------------------------------------------------------
@@ -173,9 +143,8 @@ export class SettingsService {
       emailProvider: app?.emailProvider ?? "gmail",
       gmailEmail: app?.gmailEmail ?? null,
       gmailConfigured: !!(app?.gmailEmail && app.gmailAppPasswordEnc),
-      geminiConfigured: !!app?.geminiApiKeyEnc,
-      candidate: await this.getCandidateProfile(userId),
-      resumeFileName: app?.resumePath ? path.basename(app.resumePath) : null,
+      aiConfigured: await this.aiKeys.hasAny(userId),
+      profile: await this.getSenderProfile(userId),
       senderDailyLimit: app?.senderDailyLimit ?? LIMITS.PRIMARY_SENDER_DAILY,
       profileFields: await this.getProfileFields(userId),
     };

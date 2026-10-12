@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
+import { likeContains } from "../../utils/like.js";
 import {
   inboxCategories,
   inboxCategoryRules,
@@ -278,7 +279,7 @@ export class InboxRepo {
     if (q.jobStatus) conds.push(eq(inboxMessages.jobStatus, q.jobStatus));
     if (q.unread !== undefined) conds.push(eq(inboxMessages.isUnread, q.unread));
     if (q.search) {
-      const like = `%${q.search}%`;
+      const like = likeContains(q.search);
       conds.push(
         or(
           sql`${inboxMessages.subject} ilike ${like}`,

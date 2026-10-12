@@ -1,8 +1,9 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { AuthService } from "./auth.service.js";
 import { authRepo } from "./auth.repo.js";
-import { loginSchema, registerSchema, refreshSchema } from "./auth.schema.js";
+import { loginSchema, logoutSchema, registerSchema, refreshSchema } from "./auth.schema.js";
 import { authGuard } from "../../middleware/auth-guard.js";
+import { authRateLimit, loginEmailLimiter } from "../../middleware/rate-limit.js";
 
 export async function authController(app: FastifyInstance) {
   const signAccess = (payload: object) =>
@@ -10,16 +11,28 @@ export async function authController(app: FastifyInstance) {
   const service = new AuthService(authRepo, signAccess);
 
   // POST /auth/register
-  app.post("/register", async (req: FastifyRequest, reply: FastifyReply) => {
+  app.post("/register", { config: { rateLimit: authRateLimit("auth-register") } }, async (req: FastifyRequest, reply: FastifyReply) => {
     const body = registerSchema.parse(req.body);
-    const result = await service.register(body.name, body.email, body.password);
+    const result = await service.register(body.name, body.email, body.password, {
+      userAgent: req.headers["user-agent"],
+    });
     return reply.code(201).send(result);
   });
 
   // POST /auth/login
-  app.post("/login", async (req: FastifyRequest, reply: FastifyReply) => {
+  // Two buckets: per client and email (fast), and failed logins per email from anywhere
+  // (slow), so spreading guesses over many addresses doesn't help.
+  const emailLimiter = loginEmailLimiter();
+  app.post("/login", {
+    preHandler: emailLimiter.preHandler,
+    onResponse: emailLimiter.onResponse,
+    config: { rateLimit: authRateLimit("auth-login") },
+  }, async (req: FastifyRequest, reply: FastifyReply) => {
     const body = loginSchema.parse(req.body);
-    const result = await service.login(body.email, body.password);
+    const result = await service.login(body.email, body.password, {
+      rememberMe: body.rememberMe,
+      userAgent: req.headers["user-agent"],
+    });
     return reply.code(200).send(result);
   });
 
@@ -30,13 +43,14 @@ export async function authController(app: FastifyInstance) {
     return reply.code(200).send(result);
   });
 
-  // POST /auth/logout  (guarded)
+  // POST /auth/logout  (guarded) — body { refreshToken } names the session to revoke
   app.post(
     "/logout",
     { preHandler: authGuard },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const user = req.user as { sub: number; email: string };
-      await service.logout(user.sub);
+      const body = logoutSchema.parse(req.body ?? {});
+      await service.logout(user.sub, body.refreshToken);
       return reply.code(200).send({ message: "Logged out" });
     },
   );

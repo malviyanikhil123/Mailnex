@@ -83,6 +83,15 @@ describe("GmailProvider", () => {
     expect(result).toEqual({ messageId: "x" });
   });
 
+  it("send() passes the plain-text alternative through", async () => {
+    const provider = new GmailProvider(creds);
+    const transporter = getTransporter();
+    await provider.send({ to: "r@example.com", subject: "Hi", html: "<p>World</p>", text: "World" });
+    const callArg = transporter.sendMail.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArg.html).toBe("<p>World</p>");
+    expect(callArg.text).toBe("World");
+  });
+
   it("send() works without attachments", async () => {
     const provider = new GmailProvider(creds);
     const transporter = getTransporter();

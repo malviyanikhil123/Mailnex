@@ -19,7 +19,8 @@ import { eq } from "drizzle-orm";
 describe.skipIf(!dbEnabled)("Auth routes (integration)", () => {
   let app: FastifyInstance;
 
-  const ADMIN_EMAIL = "admin@local";
+  // Must pass z.string().email() (which "admin@local" doesn't) and not clash with the seeded admin.
+  const ADMIN_EMAIL = "auth-routes-test@example.com";
   const ADMIN_PASSWORD = "Admin@123";
 
   beforeAll(async () => {
@@ -162,24 +163,25 @@ describe.skipIf(!dbEnabled)("Auth routes (integration)", () => {
       expect(res.statusCode).toBe(401);
     });
 
-    it("returns 200 and clears refresh token when authenticated", async () => {
-      // Login first
-      const loginRes = await app.inject({
-        method: "POST",
-        url: "/auth/login",
-        payload: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
-      });
-
-      const { accessToken } = loginRes.json();
+    it("returns 200 and revokes only that session when authenticated", async () => {
+      const login = async () =>
+        (await app.inject({ method: "POST", url: "/auth/login", payload: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD } })).json();
+      const first = await login();
+      const second = await login();
 
       const res = await app.inject({
         method: "POST",
         url: "/auth/logout",
-        headers: { authorization: `Bearer ${accessToken}` },
+        headers: { authorization: `Bearer ${first.accessToken}` },
+        payload: { refreshToken: first.refreshToken },
       });
 
       expect(res.statusCode).toBe(200);
       expect(res.json()).toMatchObject({ message: "Logged out" });
+      const refresh = (refreshToken: string) =>
+        app.inject({ method: "POST", url: "/auth/refresh", payload: { refreshToken } });
+      expect((await refresh(first.refreshToken)).statusCode).toBe(401);
+      expect((await refresh(second.refreshToken)).statusCode).toBe(200);
     });
   });
 });

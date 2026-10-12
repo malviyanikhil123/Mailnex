@@ -203,7 +203,7 @@ export async function inboxController(app: FastifyInstance) {
 
   app.get("/jobs/:jobId/progress", { preHandler: authGuard }, async (req, reply) => {
     const { jobId } = req.params as { jobId: string };
-    return reply.code(200).send(inboxService.getJobProgress(jobId));
+    return reply.code(200).send(inboxService.getJobProgress(getUserId(req), jobId));
   });
 
   app.get("/sync-state", { preHandler: authGuard }, async (req, reply) => {

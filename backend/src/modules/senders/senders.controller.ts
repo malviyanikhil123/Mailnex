@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { authGuard } from "../../middleware/auth-guard.js";
+import { perUserRateLimit } from "../../middleware/rate-limit.js";
 import { sendersService } from "./senders.service.js";
 import { createSenderSchema, updateSenderSchema } from "./senders.schema.js";
 
@@ -18,12 +19,20 @@ export async function sendersController(app: FastifyInstance) {
     return reply.code(200).send({ senders: await sendersService.list(getUserId(req)) });
   });
 
-  app.post("/", { preHandler: authGuard }, async (req, reply) => {
+  // Create and update log in to Gmail with the submitted app password, so both are
+  // limited per user to keep them from being used to test passwords.
+  app.post("/", {
+    preHandler: authGuard,
+    config: { rateLimit: perUserRateLimit("senders-save") },
+  }, async (req, reply) => {
     const input = createSenderSchema.parse(req.body);
     return reply.code(201).send(await sendersService.create(getUserId(req), input));
   });
 
-  app.patch("/:id", { preHandler: authGuard }, async (req, reply) => {
+  app.patch("/:id", {
+    preHandler: authGuard,
+    config: { rateLimit: perUserRateLimit("senders-save") },
+  }, async (req, reply) => {
     const input = updateSenderSchema.parse(req.body);
     return reply.code(200).send(await sendersService.update(getUserId(req), getId(req), input));
   });

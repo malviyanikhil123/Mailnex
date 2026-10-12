@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { SettingsService } from "./settings.service.js";
 import type {
   ISettingsRepo,
@@ -33,29 +33,36 @@ function makeFakeRepo(): ISettingsRepo & { app: Partial<AppSettings>; fields: Pr
       }));
       return state.fields;
     },
-    async listResumes(_userId: number) {
-      return [];
-    },
-    async getResume(_userId: number, _resumeId: number) {
-      return null;
-    },
-    async addResume(_userId: number, name: string, fileName: string, filePath: string) {
-      return { id: 1, userId: _userId, name, fileName, filePath, createdAt: new Date() };
-    },
-    async deleteResume(_userId: number, _resumeId: number) {
-      return null;
-    },
   };
 }
 
 describe("SettingsService", () => {
   let repo: ReturnType<typeof makeFakeRepo>;
   let service: SettingsService;
+  let aiKeys: { hasAny: (userId: number) => Promise<boolean> };
+  let verify: ReturnType<typeof vi.fn>;
   const userId = 1;
 
   beforeEach(() => {
     repo = makeFakeRepo();
-    service = new SettingsService(repo);
+    aiKeys = { hasAny: async () => false };
+    verify = vi.fn(async () => {});
+    service = new SettingsService(repo, aiKeys, verify);
+  });
+
+  it("logs in to Gmail with the credentials before saving them", async () => {
+    await service.updateGmail(userId, { email: "me@gmail.com", appPassword: "abcdefghijklmnop" });
+    expect(verify).toHaveBeenCalledWith("me@gmail.com", "abcdefghijklmnop");
+    expect(repo.app.gmailEmail).toBe("me@gmail.com");
+  });
+
+  it("does not store credentials Gmail rejects, and answers like the senders page", async () => {
+    verify.mockRejectedValueOnce(new Error("535-5.7.8 Username and Password not accepted"));
+    await expect(service.updateGmail(userId, { email: "me@gmail.com", appPassword: "abcdefghijklmnop" }))
+      .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/^Gmail rejected these credentials/) });
+    expect(repo.app.gmailEmail).toBeUndefined();
+    expect(repo.app.gmailAppPasswordEnc).toBeUndefined();
+    expect((await service.getPublic(userId)).gmailConfigured).toBe(false);
   });
 
   it("encrypts the Gmail app password at rest and round-trips via getGmailCreds", async () => {
@@ -66,57 +73,77 @@ describe("SettingsService", () => {
     expect(creds).toEqual({ email: "me@gmail.com", password: "abcd efgh ijkl mnop" });
   });
 
-  it("encrypts the Gemini key and round-trips via getGeminiKey", async () => {
-    await service.updateGemini(userId, { apiKey: "AIzaTopSecretKey" });
-    expect(repo.app.geminiApiKeyEnc).toBeDefined();
-    expect(repo.app.geminiApiKeyEnc).not.toContain("AIzaTopSecretKey");
-    expect(await service.getGeminiKey(userId)).toBe("AIzaTopSecretKey");
-  });
-
   it("getGmailCreds returns null when not configured", async () => {
     expect(await service.getGmailCreds(userId)).toBeNull();
   });
 
-  it("getPublic exposes booleans and candidate but NEVER decrypted secrets", async () => {
+  it("getPublic exposes booleans and the profile but NEVER decrypted secrets", async () => {
     await service.updateGmail(userId, { email: "me@gmail.com", appPassword: "secretpass" });
-    await service.updateGemini(userId, { apiKey: "secretkey" });
     const pub = await service.getPublic(userId);
     expect(pub.gmailConfigured).toBe(true);
-    expect(pub.geminiConfigured).toBe(true);
     expect(pub.gmailEmail).toBe("me@gmail.com");
     const serialized = JSON.stringify(pub);
     expect(serialized).not.toContain("secretpass");
-    expect(serialized).not.toContain("secretkey");
     expect(pub.senderDailyLimit).toBe(100);
     expect(pub.profileFields).toEqual([]);
+    expect(pub.profile).toEqual({});
+    expect(pub).not.toHaveProperty("resumeFileName");
   });
 
-  it("updateCandidate merges with the existing profile", async () => {
-    await service.updateCandidate(userId, { name: "Nikhil", role: "Software Engineer" });
-    const merged = await service.updateCandidate(userId, { phone: "12345" });
-    expect(merged.name).toBe("Nikhil");
-    expect(merged.role).toBe("Software Engineer");
-    expect(merged.phone).toBe("12345");
+  it("aiConfigured reflects whether any AI provider key is saved", async () => {
+    expect((await service.getPublic(userId)).aiConfigured).toBe(false);
+    aiKeys.hasAny = async (id) => id === userId;
+    const pub = await service.getPublic(userId);
+    expect(pub.aiConfigured).toBe(true);
+    expect(pub).not.toHaveProperty("geminiConfigured");
   });
 
-  it("buildSignature includes name, role, phone, email and links", () => {
+  it("updateProfile merges with the existing profile", async () => {
+    await service.updateProfile(userId, { name: "Priya Shah", company: "Acme Corp" });
+    const merged = await service.updateProfile(userId, { phone: "12345" });
+    expect(merged).toEqual({ name: "Priya Shah", company: "Acme Corp", phone: "12345" });
+    expect(await service.getSenderProfile(userId)).toEqual(merged);
+  });
+
+  it("updateProfile keeps legacy job-seeker keys it does not edit", async () => {
+    repo.app.candidateProfile = JSON.stringify({ name: "Nikhil", role: "Backend Engineer", skills: ["Node.js"] });
+    const merged = await service.updateProfile(userId, { name: "Nikhil M", website: "https://n.dev" });
+    expect(merged).toMatchObject({ name: "Nikhil M", website: "https://n.dev", role: "Backend Engineer", skills: ["Node.js"] });
+  });
+
+  it("getSenderProfile offers a legacy portfolio as the website until one is saved", async () => {
+    repo.app.candidateProfile = JSON.stringify({ portfolio: "https://old.dev" });
+    expect((await service.getSenderProfile(userId)).website).toBe("https://old.dev");
+
+    await service.updateProfile(userId, { website: "" });
+    const profile = await service.getSenderProfile(userId);
+    expect(profile.website).toBe("");
+    expect(profile.portfolio).toBe("https://old.dev");
+  });
+
+  it("getSenderProfile returns an empty profile for corrupt or non-object JSON", async () => {
+    repo.app.candidateProfile = "{not json";
+    expect(await service.getSenderProfile(userId)).toEqual({});
+    repo.app.candidateProfile = "null";
+    expect(await service.getSenderProfile(userId)).toEqual({});
+  });
+
+  it("buildSignature uses the user's own signature when set", () => {
+    const sig = service.buildSignature({ name: "Priya", signature: "  Cheers,\nPriya\nAcme — acme.com  " });
+    expect(sig).toBe("Cheers,\nPriya\nAcme — acme.com");
+  });
+
+  it("buildSignature defaults to name, company, phone and website, skipping blanks", () => {
     const sig = service.buildSignature({
-      name: "Nikhil Malviya",
-      role: "Software Engineer",
-      phone: "999",
-      email: "n@example.com",
-      linkedin: "https://linkedin.com/in/x",
-      github: "https://github.com/x",
-      portfolio: "https://x.dev",
+      name: "Priya Shah",
+      company: "Acme Corp",
+      phone: " ",
+      website: "https://acme.com",
+      email: "p@acme.com",
+      signature: "   ",
     });
-    expect(sig).toContain("Regards,");
-    expect(sig).toContain("Nikhil Malviya");
-    expect(sig).toContain("Software Engineer");
-    expect(sig).toContain("Phone: 999");
-    expect(sig).toContain("Email: n@example.com");
-    expect(sig).toContain("LinkedIn: https://linkedin.com/in/x");
-    expect(sig).toContain("GitHub: https://github.com/x");
-    expect(sig).toContain("Portfolio: https://x.dev");
+    expect(sig).toBe("Best regards,\nPriya Shah\nAcme Corp\nhttps://acme.com");
+    expect(service.buildSignature({})).toBe("Best regards,");
   });
 
   it("updateSending stores the primary Gmail daily cap", async () => {

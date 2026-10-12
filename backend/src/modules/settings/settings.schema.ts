@@ -1,31 +1,65 @@
 import { z } from "zod";
-/** Gmail credential update — secret is write-only. */
+import { BUILTIN_TEMPLATE_VARS } from "../../config/constants.js";
+import { appPasswordSchema } from "../../utils/app-password.js";
+/** Gmail credential update — secret is write-only. Any domain is allowed (Google Workspace). */
 export const updateGmailSchema = z.object({
-  email: z.string().email(),
-  appPassword: z.string().min(1),
+  email: z.string().trim().toLowerCase().max(254).email("Enter a valid email address"),
+  appPassword: appPasswordSchema,
 });
 export type UpdateGmailInput = z.infer<typeof updateGmailSchema>;
 
-/** Gemini API key update — write-only. */
-export const updateGeminiSchema = z.object({
-  apiKey: z.string().min(1),
-});
-export type UpdateGeminiInput = z.infer<typeof updateGeminiSchema>;
+const emailCheck = z.string().email();
 
-/** Candidate profile — editable from the Settings UI. All fields optional so a
+/** A web address with or without http(s)://, e.g. "acme.com" or "https://acme.com/about". */
+export function isWebsite(value: string): boolean {
+  if (/\s/.test(value)) return false;
+  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(value);
+  let url: URL;
+  try {
+    url = new URL(hasScheme ? value : `https://${value}`);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  // A real host name: dot-separated labels ending in a top-level domain (IDNs arrive as xn--).
+  return /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$/i.test(url.hostname);
+}
+
+/** The sender's "My Profile" — editable from the Settings UI. All fields optional so a
  *  partial form submission merges with the existing stored profile. */
-export const candidateProfileSchema = z.object({
-  name: z.string().optional(),
-  phone: z.string().optional(),
-  email: z.string().optional(),
-  role: z.string().optional(),
-  experience: z.string().optional(),
-  skills: z.union([z.string(), z.array(z.string())]).optional(),
-  linkedin: z.string().optional(),
-  github: z.string().optional(),
-  portfolio: z.string().optional(),
+export const senderProfileSchema = z.object({
+  name: z.string().max(200).optional(),
+  company: z.string().max(200).optional(),
+  /** Empty clears it; anything else must be an address. */
+  email: z
+    .string()
+    .trim()
+    .max(200)
+    .refine((v) => v === "" || emailCheck.safeParse(v).success, "Enter a valid email address, or leave it empty")
+    .optional(),
+  phone: z.string().max(100).optional(),
+  /** Empty clears it; otherwise a URL or a bare domain such as acme.com. */
+  website: z
+    .string()
+    .trim()
+    .max(500)
+    .refine((v) => v === "" || isWebsite(v), "Enter a website like acme.com or https://acme.com, or leave it empty")
+    .optional(),
+  linkedin: z.string().max(500).optional(),
+  /** Multi-line sign-off; when empty a default is built from name/company/phone/website. */
+  signature: z.string().max(2000).optional(),
 });
-export type CandidateProfile = z.infer<typeof candidateProfileSchema>;
+export type SenderProfileInput = z.infer<typeof senderProfileSchema>;
+
+/** Stored profile JSON. Profiles saved by the old job-seeker form also carry these keys;
+ *  they are no longer edited but still fill the legacy template variables. */
+export type SenderProfile = SenderProfileInput & {
+  role?: string;
+  experience?: string;
+  skills?: string | string[];
+  github?: string;
+  portfolio?: string;
+};
 
 /** Sending settings for the primary Gmail (per-campaign settings live on each campaign). */
 export const updateSendingSchema = z.object({
@@ -34,11 +68,7 @@ export const updateSendingSchema = z.object({
 export type UpdateSendingInput = z.infer<typeof updateSendingSchema>;
 
 /** Template variables the send job already fills; custom fields must not shadow them. */
-export const RESERVED_PROFILE_KEYS = [
-  "company", "location", "candidateName", "name", "candidateEmail", "email", "phone",
-  "role", "targetRole", "experience", "skills", "linkedin", "LinkedIn", "github",
-  "GitHub", "portfolio", "Portfolio", "signature",
-] as const;
+export const RESERVED_PROFILE_KEYS = BUILTIN_TEMPLATE_VARS;
 
 /** Custom "My Profile" fields — the full list is replaced on save. */
 export const profileFieldsSchema = z.object({

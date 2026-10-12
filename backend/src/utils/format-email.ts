@@ -1,6 +1,31 @@
+import { escapeHtml, sanitizeEmailHtml } from "./email-html.js";
+
+/**
+ * A URL in plain text. Quotes and angle brackets end it, so a value like
+ * `https://x.io/"onmouseover="…` can never carry markup into the href.
+ */
+const URL_IN_TEXT = /https?:\/\/[^\s"'<>]+/g;
+
+/** Escapes plain text for HTML and turns its http(s) URLs into links. */
+export function linkifyText(content: string): string {
+  let out = "";
+  let last = 0;
+  for (const m of content.matchAll(URL_IN_TEXT)) {
+    const url = escapeHtml(m[0]);
+    out += escapeHtml(content.slice(last, m.index));
+    out += `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline;">${url}</a>`;
+    last = m.index! + m[0].length;
+  }
+  return out + escapeHtml(content.slice(last));
+}
+
 /**
  * Formats a plain-text email body (including signature and URLs) into
  * clean, modern, responsive HTML suitable for all email clients (Gmail, Outlook, Apple Mail).
+ *
+ * The text holds contact fields and AI-written copy, so every piece of it is
+ * HTML-escaped, and the finished document goes through the same sanitizer as the
+ * HTML templates.
  */
 export function formatEmailHtml(text: string): string {
   if (!text || !text.trim()) {
@@ -17,22 +42,14 @@ export function formatEmailHtml(text: string): string {
     signatureText = text.slice(sigMatch.index).trim();
   }
 
-  // URL linkifier
-  const linkify = (content: string): string => {
-    return content.replace(
-      /(https?:\/\/[^\s<]+)/g,
-      '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline;">$1</a>',
-    );
-  };
-
   // Convert main body paragraphs
   const paragraphs = mainBody
     .split(/\n\s*\n/)
     .map((p) => p.trim())
     .filter(Boolean)
     .map((p) => {
-      const withBreaks = p.replace(/\n/g, "<br />");
-      return `<p style="margin: 0 0 16px 0; font-size: 15px; line-height: 1.65; color: #1e293b;">${linkify(withBreaks)}</p>`;
+      const withBreaks = linkifyText(p).replace(/\n/g, "<br />");
+      return `<p style="margin: 0 0 16px 0; font-size: 15px; line-height: 1.65; color: #1e293b;">${withBreaks}</p>`;
     })
     .join("\n");
 
@@ -44,8 +61,8 @@ export function formatEmailHtml(text: string): string {
       .map((l) => l.trim())
       .filter(Boolean);
 
-    const greeting = lines[0] || "Regards,";
-    const name = lines.length > 1 ? lines[1] : "";
+    const greeting = escapeHtml(lines[0] || "Regards,");
+    const name = lines.length > 1 ? escapeHtml(lines[1]) : "";
     const remaining = lines.slice(2);
 
     const badges: string[] = [];
@@ -53,33 +70,33 @@ export function formatEmailHtml(text: string): string {
 
     for (const line of remaining) {
       if (/^phone:\s*/i.test(line)) {
-        const num = line.replace(/^phone:\s*/i, "");
+        const num = escapeHtml(line.replace(/^phone:\s*/i, ""));
         badges.push(
           `<span style="display: inline-block; margin-right: 12px; color: #475569;">📞 <a href="tel:${num}" style="color: #475569; text-decoration: none;">${num}</a></span>`,
         );
       } else if (/^email:\s*/i.test(line)) {
-        const email = line.replace(/^email:\s*/i, "");
+        const email = escapeHtml(line.replace(/^email:\s*/i, ""));
         badges.push(
           `<span style="display: inline-block; margin-right: 12px; color: #2563eb;">✉️ <a href="mailto:${email}" style="color: #2563eb; text-decoration: none;">${email}</a></span>`,
         );
       } else if (/^linkedin:\s*/i.test(line)) {
-        const url = line.replace(/^linkedin:\s*/i, "");
+        const url = escapeHtml(line.replace(/^linkedin:\s*/i, ""));
         badges.push(
           `<a href="${url}" target="_blank" rel="noopener noreferrer" style="display: inline-block; margin-right: 8px; margin-bottom: 6px; padding: 4px 12px; background-color: #f0f9ff; color: #0284c7; border: 1px solid #bae6fd; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 500;">LinkedIn ↗</a>`,
         );
       } else if (/^github:\s*/i.test(line)) {
-        const url = line.replace(/^github:\s*/i, "");
+        const url = escapeHtml(line.replace(/^github:\s*/i, ""));
         badges.push(
           `<a href="${url}" target="_blank" rel="noopener noreferrer" style="display: inline-block; margin-right: 8px; margin-bottom: 6px; padding: 4px 12px; background-color: #f8fafc; color: #334155; border: 1px solid #e2e8f0; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 500;">GitHub ↗</a>`,
         );
       } else if (/^portfolio:\s*/i.test(line)) {
-        const url = line.replace(/^portfolio:\s*/i, "");
+        const url = escapeHtml(line.replace(/^portfolio:\s*/i, ""));
         badges.push(
           `<a href="${url}" target="_blank" rel="noopener noreferrer" style="display: inline-block; margin-right: 8px; margin-bottom: 6px; padding: 4px 12px; background-color: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 500;">Portfolio ↗</a>`,
         );
       } else {
         textLines.push(
-          `<div style="font-size: 14px; color: #64748b; margin-bottom: 4px;">${linkify(line)}</div>`,
+          `<div style="font-size: 14px; color: #64748b; margin-bottom: 4px;">${linkifyText(line)}</div>`,
         );
       }
     }
@@ -94,7 +111,7 @@ export function formatEmailHtml(text: string): string {
     `;
   }
 
-  return `<!DOCTYPE html>
+  return sanitizeEmailHtml(`<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8">
@@ -116,5 +133,5 @@ export function formatEmailHtml(text: string): string {
       </tr>
     </table>
   </body>
-</html>`;
+</html>`);
 }

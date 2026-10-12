@@ -6,7 +6,9 @@ import { sendersService } from "../modules/senders/senders.service.js";
 import { templatesRepo } from "../modules/templates/templates.repo.js";
 import { logsRepo } from "../modules/logs/logs.repo.js";
 import { settingsService } from "../modules/settings/settings.service.js";
-import { personalize } from "../integrations/gemini/client.js";
+import { aiProvidersService } from "../modules/ai-providers/ai-providers.service.js";
+import { documentsService } from "../modules/documents/documents.service.js";
+import { personalize } from "../integrations/ai/personalize.js";
 import { getEmailProvider } from "../integrations/email/factory.js";
 import type { EmailProvider } from "../integrations/email/provider.js";
 import { sendEmailJob, type SendEmailDeps } from "../jobs/send-email.js";
@@ -39,7 +41,10 @@ function buildSendDeps(campaign: Campaign, senderCampaignIds: number[]): SendEma
       getSettings: async () => {
         const c = await campaignRepo.getById(campaign.id);
         return c
-          ? { mode: c.mode, testEmail: c.testEmail, language: c.language, aiEnabled: c.aiEnabled, aiInstructions: c.aiInstructions }
+          ? {
+              mode: c.mode, testEmail: c.testEmail, language: c.language, aiEnabled: c.aiEnabled, aiInstructions: c.aiInstructions,
+              aiProvider: c.aiProvider, aiModel: c.aiModel,
+            }
           : null;
       },
       // Gmail's quota is per account, so hitting it pauses every campaign on that sender.
@@ -55,17 +60,13 @@ function buildSendDeps(campaign: Campaign, senderCampaignIds: number[]): SendEma
       incQuota: (d) => campaignRepo.incQuota(userId, d),
     },
     templates: {
-      pickRandomActive: (options) => templatesRepo.pickForCampaign(userId, campaign.id, options),
+      pickForCampaign: (options) => templatesRepo.pickForCampaign(userId, campaign.id, options),
     },
     settings: {
-      getGeminiKey: () => settingsService.getGeminiKey(userId),
-      getCandidateProfile: () => settingsService.getCandidateProfile(userId),
+      getAiConfig: (choice) => aiProvidersService.resolve(userId, choice),
+      getSenderProfile: () => settingsService.getSenderProfile(userId),
       buildSignature: (p) => settingsService.buildSignature(p),
-      getResumeAttachment: (resumeId) => settingsService.getResumeAttachment(userId, resumeId),
-      getResumePath: async (resumeId) => {
-        const att = await settingsService.getResumeAttachment(userId, resumeId);
-        return att?.path ?? null;
-      },
+      getDocumentAttachment: (documentId) => documentsService.getAttachment(userId, documentId),
       getProfileVars: () => settingsService.getProfileVars(userId),
     },
     personalize,
@@ -133,7 +134,7 @@ async function runInboxPass(now: Date): Promise<void> {
     try {
       const synced = await runSyncForUser(userId);
       // Only classify when something actually arrived, so an idle account costs
-      // nothing and no Gemini quota is spent on an empty pass.
+      // nothing and no AI quota is spent on an empty pass.
       if (synced.outcome === "ok" && synced.inserted > 0) {
         const sorted = await runClassifyForUser(userId, "new");
         logger.info(

@@ -9,7 +9,8 @@ const styles: Record<string, string> = {
 export function Toaster() {
   const { toasts, dismiss } = useToast();
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+    // Always rendered, so screen readers announce each toast as it is added.
+    <div role="status" aria-live="polite" className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
       {toasts.map((t) => (
         <button
           key={t.id}

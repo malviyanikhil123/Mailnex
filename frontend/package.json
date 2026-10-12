@@ -14,6 +14,7 @@
     "@hookform/resolvers": "^3.9.0",
     "@tanstack/react-query": "^5.51.23",
     "axios": "^1.7.4",
+    "dompurify": "^3.4.16",
     "lucide-react": "^0.427.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

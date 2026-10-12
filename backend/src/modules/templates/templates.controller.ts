@@ -5,7 +5,11 @@ import {
   createTemplateSchema,
   updateTemplateSchema,
   previewVarsSchema,
+  generateHtmlSchema,
 } from "./templates.schema.js";
+
+/** AI design generation spends the user's own provider credits: 10 per minute per user. */
+export const GENERATE_HTML_RATE_LIMIT = { max: 10, timeWindow: "1 minute" } as const;
 
 function isUniqueViolation(err: unknown): boolean {
   return (
@@ -49,6 +53,40 @@ export async function templatesController(app: FastifyInstance) {
       const userId = getUserId(req);
       const templates = await templatesService.list(userId);
       return reply.code(200).send(templates);
+    },
+  );
+
+  /** POST /templates/starter — add the starter templates the user doesn't have yet. */
+  app.post(
+    "/starter",
+    { preHandler: authGuard },
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const result = await templatesService.addStarterTemplates(getUserId(req));
+      return reply.code(200).send(result);
+    },
+  );
+
+  /** POST /templates/generate-html — AI-designed HTML for the editor (not saved). */
+  app.post(
+    "/generate-html",
+    {
+      preHandler: authGuard,
+      config: {
+        rateLimit: {
+          ...GENERATE_HTML_RATE_LIMIT,
+          // Runs after authGuard so the limit is per user, not per IP.
+          hook: "preHandler",
+          keyGenerator: (req: FastifyRequest) => {
+            const sub = (req.user as { sub?: number } | undefined)?.sub;
+            return sub != null ? `templates-generate-html:${sub}` : req.ip;
+          },
+        },
+      },
+    },
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const input = generateHtmlSchema.parse(req.body);
+      const result = await templatesService.generateHtml(getUserId(req), input);
+      return reply.code(200).send(result);
     },
   );
 

@@ -1,7 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { classifyInboxJob, type ClassifyInboxDeps, type ClassifyMessageRow } from "./classify-inbox.js";
 import type { RuleLike } from "../modules/inbox/rules-engine.js";
-import type { ClassifyResult } from "../integrations/gemini/classifier.js";
+import type { ClassifyResult } from "../integrations/ai/classifier.js";
+import type { AiModelConfig } from "../integrations/ai/model-factory.js";
+
+const TEST_AI: AiModelConfig = { provider: "google", apiKey: "test-key", model: "gemini-3.5-flash-lite" };
 
 const CATEGORIES = [
   { id: 1, name: "OTP", description: "Codes.", trackSubStatus: false },
@@ -38,7 +41,8 @@ function harness(over: {
   rules?: RuleLike[];
   unclassified?: ClassifyMessageRow[];
   reclassifiable?: ClassifyMessageRow[];
-  apiKey?: string;
+  /** null = no AI key saved. */
+  ai?: AiModelConfig | null;
   aiResult?: ClassifyResult;
   applyReturns?: boolean | ((id: number) => boolean);
 } = {}): Harness {
@@ -59,7 +63,7 @@ function harness(over: {
       listReclassifiable: async () => over.reclassifiable ?? [],
       applyAssignment,
     },
-    getGeminiKey: async () => over.apiKey ?? "test-key",
+    getAiConfig: async () => (over.ai === undefined ? TEST_AI : over.ai),
     classifyMessages: classifyMessages as unknown as ClassifyInboxDeps["classifyMessages"],
     now: () => new Date("2026-01-15T10:00:00Z"),
   };
@@ -171,7 +175,7 @@ describe("classifyInboxJob", () => {
     const h = harness({
       unclassified: [msg(1)],
       aiResult: {
-        decisions: [{ ref: "1", categoryId: null, confidence: 0, reason: "No Gemini API key configured", jobStatus: null, company: null, role: null }],
+        decisions: [{ ref: "1", categoryId: null, confidence: 0, reason: "No AI provider configured", jobStatus: null, company: null, role: null }],
         aiUsed: false, aiCalls: 0,
       },
     });
@@ -184,18 +188,24 @@ describe("classifyInboxJob", () => {
     }));
   });
 
-  it("runs with no Gemini key without erroring", async () => {
+  it("runs with no AI key without erroring", async () => {
     const h = harness({
       unclassified: [msg(1)],
-      apiKey: "",
+      ai: null,
       aiResult: {
-        decisions: [{ ref: "1", categoryId: null, confidence: 0, reason: "No Gemini API key configured", jobStatus: null, company: null, role: null }],
+        decisions: [{ ref: "1", categoryId: null, confidence: 0, reason: "No AI provider configured", jobStatus: null, company: null, role: null }],
         aiUsed: false, aiCalls: 0,
       },
     });
     const r = await classifyInboxJob(h.deps);
     expect(r.outcome).toBe("ok");
-    expect(h.classifyMessages.mock.calls[0]![0].apiKey).toBeUndefined();
+    expect(h.classifyMessages.mock.calls[0]![0].ai).toBeUndefined();
+  });
+
+  it("hands the user's default provider config to the classifier", async () => {
+    const h = harness({ unclassified: [msg(1)] });
+    await classifyInboxJob(h.deps);
+    expect(h.classifyMessages.mock.calls[0]![0].ai).toEqual(TEST_AI);
   });
 
   it("mode 'all' draws from the reclassifiable set, which excludes manual picks", async () => {

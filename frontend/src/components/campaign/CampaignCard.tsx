@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { campaignApi } from "../../services/campaign.api";
 import { Button, Card } from "../ui/primitives";
 import { toast } from "../../store/toast";
+import { errorMessage } from "../../services/errors";
 import type { Campaign, SenderAccount } from "../../types/api";
 
 type Action = "start" | "pause" | "resume" | "stop";
@@ -12,10 +13,6 @@ const STATE_STYLES: Record<string, string> = {
   STOPPED: "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
   IDLE: "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
 };
-
-function errorMessage(err: unknown, fallback: string): string {
-  return (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback;
-}
 
 export function CampaignCard({
   campaign: c,
@@ -80,8 +77,14 @@ export function CampaignCard({
 
       <p className="text-xs text-gray-500">
         {c.templateIds.length} template{c.templateIds.length === 1 ? "" : "s"} · {c.language} ·{" "}
-        {c.aiEnabled ? "AI enhanced" : "No AI"} · {c.startHour}:00–{c.endHour}:00
+        {c.aiActive ? "AI enhanced" : "No AI"} · {c.startHour}:00–{c.endHour}:00
       </p>
+      {c.aiEnabled && !c.aiActive && (
+        <p className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+          AI is on for this campaign, but {c.aiProvider ? "that AI provider isn't" : "no AI provider is"} connected, so emails go out as
+          written. Add a key in Settings → AI providers.
+        </p>
+      )}
 
       {c.mode === "LIVE" && c.state === "RUNNING" && (
         <p className="rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-700 dark:bg-red-950/50 dark:text-red-300">

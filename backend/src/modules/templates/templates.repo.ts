@@ -1,12 +1,13 @@
 import { db } from "../../db/index.js";
 import { emailTemplates } from "../../db/schema/templates.js";
-import { resumes } from "../../db/schema/resumes.js";
+import { documents } from "../../db/schema/documents.js";
 import { emailLogs } from "../../db/schema/logs.js";
 import { campaignTemplates } from "../../db/schema/campaign.js";
 import { and, eq, ne, sql, desc, asc } from "drizzle-orm";
 import type { CreateTemplateInput, UpdateTemplateInput } from "./templates.schema.js";
 
 export type Template = typeof emailTemplates.$inferSelect;
+export type NewTemplateRow = Pick<typeof emailTemplates.$inferInsert, "name" | "subject" | "body" | "category" | "format">;
 
 export class TemplatesRepo {
   async create(userId: number, input: CreateTemplateInput): Promise<Template> {
@@ -15,6 +16,25 @@ export class TemplatesRepo {
       .values({ ...input, userId })
       .returning();
     return row;
+  }
+
+  /** Inserts the rows the user does not have yet; a (name, category) clash is skipped,
+   *  never an error. Returns the rows actually inserted. */
+  async createMany(userId: number, rows: NewTemplateRow[]): Promise<Template[]> {
+    if (rows.length === 0) return [];
+    return db
+      .insert(emailTemplates)
+      .values(rows.map((r) => ({ ...r, userId })))
+      .onConflictDoNothing({ target: [emailTemplates.name, emailTemplates.category, emailTemplates.userId] })
+      .returning();
+  }
+
+  /** (name, category) of every template of the user — the unique key per user. */
+  async listKeys(userId: number): Promise<{ name: string; category: string }[]> {
+    return db
+      .select({ name: emailTemplates.name, category: emailTemplates.category })
+      .from(emailTemplates)
+      .where(eq(emailTemplates.userId, userId));
   }
 
   async update(userId: number, id: number, data: Partial<UpdateTemplateInput> & { version?: number }): Promise<Template | null> {
@@ -42,26 +62,27 @@ export class TemplatesRepo {
         name: emailTemplates.name,
         subject: emailTemplates.subject,
         body: emailTemplates.body,
+        format: emailTemplates.format,
         category: emailTemplates.category,
         version: emailTemplates.version,
         active: emailTemplates.active,
-        resumeId: emailTemplates.resumeId,
+        documentId: emailTemplates.documentId,
         createdAt: emailTemplates.createdAt,
         updatedAt: emailTemplates.updatedAt,
-        resume: {
-          id: resumes.id,
-          name: resumes.name,
-          fileName: resumes.fileName,
+        document: {
+          id: documents.id,
+          name: documents.name,
+          fileName: documents.fileName,
         },
       })
       .from(emailTemplates)
-      .leftJoin(resumes, eq(emailTemplates.resumeId, resumes.id))
+      .leftJoin(documents, and(eq(emailTemplates.documentId, documents.id), eq(documents.userId, emailTemplates.userId)))
       .where(eq(emailTemplates.userId, userId))
       .orderBy(desc(emailTemplates.id));
 
     return rows.map((r) => ({
       ...r,
-      resume: r.resume?.id ? r.resume : null,
+      document: r.document?.id ? r.document : null,
     }));
   }
 
@@ -73,68 +94,28 @@ export class TemplatesRepo {
         name: emailTemplates.name,
         subject: emailTemplates.subject,
         body: emailTemplates.body,
+        format: emailTemplates.format,
         category: emailTemplates.category,
         version: emailTemplates.version,
         active: emailTemplates.active,
-        resumeId: emailTemplates.resumeId,
+        documentId: emailTemplates.documentId,
         createdAt: emailTemplates.createdAt,
         updatedAt: emailTemplates.updatedAt,
-        resume: {
-          id: resumes.id,
-          name: resumes.name,
-          fileName: resumes.fileName,
+        document: {
+          id: documents.id,
+          name: documents.name,
+          fileName: documents.fileName,
         },
       })
       .from(emailTemplates)
-      .leftJoin(resumes, eq(emailTemplates.resumeId, resumes.id))
+      .leftJoin(documents, and(eq(emailTemplates.documentId, documents.id), eq(documents.userId, emailTemplates.userId)))
       .where(and(eq(emailTemplates.id, id), eq(emailTemplates.userId, userId)));
 
     if (!row) return null;
     return {
       ...row,
-      resume: row.resume?.id ? row.resume : null,
+      document: row.document?.id ? row.document : null,
     };
-  }
-
-  async pickRandomActive(userId: number, options?: { isFollowup?: boolean }): Promise<Template | undefined> {
-    const conditions = [eq(emailTemplates.active, true), eq(emailTemplates.userId, userId)];
-
-    if (options?.isFollowup === true) {
-      conditions.push(eq(emailTemplates.category, "followup"));
-    } else {
-      // First-time contacts: NEVER pick followup templates
-      conditions.push(ne(emailTemplates.category, "followup"));
-    }
-
-    // Balanced round-robin: pick active template with fewest sent emails (tie-break by template id)
-    const rows = await db
-      .select({
-        template: emailTemplates,
-        useCount: sql<number>`count(${emailLogs.id})::int`,
-      })
-      .from(emailTemplates)
-      .leftJoin(emailLogs, and(eq(emailLogs.templateId, emailTemplates.id), eq(emailLogs.userId, userId)))
-      .where(and(...conditions))
-      .groupBy(emailTemplates.id)
-      .orderBy(sql`count(${emailLogs.id}) ASC`, asc(emailTemplates.id))
-      .limit(1);
-
-    if (rows.length > 0) return rows[0].template;
-
-    // Fallback to any active template for this user (balanced by usage)
-    const fallbackRows = await db
-      .select({
-        template: emailTemplates,
-        useCount: sql<number>`count(${emailLogs.id})::int`,
-      })
-      .from(emailTemplates)
-      .leftJoin(emailLogs, and(eq(emailLogs.templateId, emailTemplates.id), eq(emailLogs.userId, userId)))
-      .where(and(eq(emailTemplates.active, true), eq(emailTemplates.userId, userId)))
-      .groupBy(emailTemplates.id)
-      .orderBy(sql`count(${emailLogs.id}) ASC`, asc(emailTemplates.id))
-      .limit(1);
-
-    return fallbackRows[0]?.template;
   }
 
   /** Rotates through the templates attached to a campaign, least-used in that campaign
