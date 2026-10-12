@@ -89,7 +89,7 @@ pipeline {
 
                         sh """
                             docker-compose -f ${COMPOSE_FILE} pull client-mailnex-api
-                            docker-compose -f ${COMPOSE_FILE} up -d --no-deps --force-recreate mailnex-api
+                            docker-compose -f ${COMPOSE_FILE} up -d --no-deps --force-recreate client-mailnex-api
                         """
                     }
 
@@ -99,7 +99,7 @@ pipeline {
 
                         sh """
                             docker-compose -f ${COMPOSE_FILE} pull client-mailnex-ui
-                            docker-compose -f ${COMPOSE_FILE} up -d --no-deps --force-recreate mailnex-ui
+                            docker-compose -f ${COMPOSE_FILE} up -d --no-deps --force-recreate client-mailnex-ui
                         """
                     }
                 }
